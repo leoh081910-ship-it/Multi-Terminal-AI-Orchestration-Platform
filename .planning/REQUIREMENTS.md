@@ -156,19 +156,19 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 ~ CORE-06 | Phase 1 | Pending |
-| PERS-01 ~ PERS-06 | Phase 1 | Pending |
-| WAVE-01 ~ WAVE-05 | Phase 1 | Pending |
-| DEPD-01 ~ DEPD-05 | Phase 1 | Pending |
-| STAT-01 ~ STAT-06 | Phase 2 | Pending |
-| RETR-01 ~ RETR-07 | Phase 2 | Pending |
-| TRAN-01 ~ TRAN-07 | Phase 3 | Pending |
-| MERG-01 ~ MERG-06 | Phase 3 | Pending |
-| REVR-01 ~ REVR-14 | Phase 4 | Pending |
-| AGNT-01 ~ AGNT-03 | Phase 5 | Pending |
-| CONN-01 ~ CONN-03 | Phase 5 | Pending |
-| API-01 ~ API-03 | Phase 6 | Pending |
-| UI-01 ~ UI-07 | Phase 6 | Pending |
+| PERS-01 ~ PERS-06 | Phase 1: Foundation | Pending |
+| CORE-01 ~ CORE-06 | Phase 2: Core Engine | Pending |
+| WAVE-01 ~ WAVE-05 | Phase 2: Core Engine | Pending |
+| DEPD-01 ~ DEPD-05 | Phase 2: Core Engine | Pending |
+| STAT-01 ~ STAT-06 | Phase 2: Core Engine | Pending |
+| RETR-01 ~ RETR-07 | Phase 2: Core Engine | Pending |
+| TRAN-01 ~ TRAN-07 | Phase 3: Execution Layer | Pending |
+| REVR-01 ~ REVR-14 | Phase 3: Execution Layer | Pending |
+| MERG-01 ~ MERG-06 | Phase 4: Integration | Pending |
+| AGNT-01 ~ AGNT-03 | Phase 4: Integration | Pending |
+| CONN-01 ~ CONN-03 | Phase 4: Integration | Pending |
+| API-01 ~ API-03 | Phase 5: Interface | Pending |
+| UI-01 ~ UI-07 | Phase 5: Interface | Pending |
 
 **Coverage:**
 - v1 requirements: 56 total
@@ -177,4 +177,4 @@
 
 ---
 *Requirements defined: 2026-04-06*
-*Last updated: 2026-04-06 after initial definition*
+*Last updated: 2026-04-06 after roadmap creation*
