@@ -432,7 +432,7 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 		return nil, errors.New("task card is required")
 	}
 	if input.CardJSON == "" {
-		return nil, errors.New("card_json is required")
+		return nil, errors.New("invalid card_json: empty")
 	}
 
 	var payload taskCardJSONPayload
@@ -441,20 +441,29 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 	}
 
 	derived := &TaskCard{
-		ID:                 chooseString(payload.ID, input.ID, existingString(existing, func(t *ent.Task) string { return t.ID })),
-		DispatchRef:        chooseString(payload.DispatchRef, input.DispatchRef, existingString(existing, func(t *ent.Task) string { return t.DispatchRef })),
-		State:              chooseString(payload.State, input.State, existingString(existing, func(t *ent.Task) string { return t.State })),
-		RetryCount:         chooseInt(payload.RetryCount, input.RetryCount, existingInt(existing, func(t *ent.Task) int { return t.RetryCount })),
-		LoopIterationCount: chooseInt(payload.LoopIterationCount, input.LoopIterationCount, existingInt(existing, func(t *ent.Task) int { return t.LoopIterationCount })),
-		Transport:          chooseString(payload.Transport, input.Transport, existingString(existing, func(t *ent.Task) string { return t.Transport })),
-		Wave:               chooseInt(payload.Wave, input.Wave, existingInt(existing, func(t *ent.Task) int { return t.Wave })),
-		TopoRank:           chooseInt(payload.TopoRank, input.TopoRank, existingInt(existing, func(t *ent.Task) int { return t.TopoRank })),
-		WorkspacePath:      chooseString(payload.WorkspacePath, input.WorkspacePath, existingString(existing, func(t *ent.Task) string { return t.WorkspacePath })),
-		ArtifactPath:       chooseString(payload.ArtifactPath, input.ArtifactPath, existingString(existing, func(t *ent.Task) string { return t.ArtifactPath })),
-		LastErrorReason:    chooseString(payload.LastErrorReason, input.LastErrorReason, existingString(existing, func(t *ent.Task) string { return t.LastErrorReason })),
+		ID:                 chooseString(payload.ID, existingString(existing, func(t *ent.Task) string { return t.ID })),
+		DispatchRef:        chooseString(payload.DispatchRef, existingString(existing, func(t *ent.Task) string { return t.DispatchRef })),
+		State:              chooseString(payload.State, existingString(existing, func(t *ent.Task) string { return t.State })),
+		RetryCount:         chooseInt(payload.RetryCount, existingInt(existing, func(t *ent.Task) int { return t.RetryCount })),
+		LoopIterationCount: chooseInt(payload.LoopIterationCount, existingInt(existing, func(t *ent.Task) int { return t.LoopIterationCount })),
+		Transport:          chooseString(payload.Transport, existingString(existing, func(t *ent.Task) string { return t.Transport })),
+		Wave:               chooseInt(payload.Wave, existingInt(existing, func(t *ent.Task) int { return t.Wave })),
+		TopoRank:           chooseInt(payload.TopoRank, existingInt(existing, func(t *ent.Task) int { return t.TopoRank })),
+		WorkspacePath:      chooseString(payload.WorkspacePath, existingString(existing, func(t *ent.Task) string { return t.WorkspacePath })),
+		ArtifactPath:       chooseString(payload.ArtifactPath, existingString(existing, func(t *ent.Task) string { return t.ArtifactPath })),
+		LastErrorReason:    chooseString(payload.LastErrorReason, existingString(existing, func(t *ent.Task) string { return t.LastErrorReason })),
 		CardJSON:           input.CardJSON,
 	}
 
+	if derived.ID == "" {
+		return nil, errors.New("invalid card_json: missing id")
+	}
+	if derived.DispatchRef == "" {
+		return nil, errors.New("invalid card_json: missing dispatch_ref")
+	}
+	if derived.Transport == "" {
+		return nil, errors.New("invalid card_json: missing transport")
+	}
 	if derived.State == "" {
 		derived.State = "queued"
 	}
@@ -462,22 +471,16 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 	return derived, nil
 }
 
-func chooseString(value *string, fallback string, existing string) string {
+func chooseString(value *string, existing string) string {
 	if value != nil {
 		return *value
-	}
-	if fallback != "" {
-		return fallback
 	}
 	return existing
 }
 
-func chooseInt(value *int, fallback int, existing int) int {
+func chooseInt(value *int, existing int) int {
 	if value != nil {
 		return *value
-	}
-	if fallback != 0 {
-		return fallback
 	}
 	return existing
 }
