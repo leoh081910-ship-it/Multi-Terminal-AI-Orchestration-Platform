@@ -1,100 +1,71 @@
 ---
-gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+gsd_state_version: 1.2
+milestone: v2.1
+milestone_name: runtime-reliability
 status: completed
-stopped_at: Phase 5 completed
-last_updated: "2026-04-07T16:30:00.000Z"
-last_activity: 2026-04-07 -- Completed quick task 260407-w7l (Phase 01 PERS-04 card_json source-of-truth fix)
+stopped_at: PR-OPS-003 / PR-3 fully complete
+last_updated: "2026-04-12T01:00:00+08:00"
+last_activity: 2026-04-12 -- Fixed heartbeat isolation + timeout enforcement
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 2
+  completed_plans: 2
   percent: 100
 ---
 
 # Project State
 
-## Project Reference
-
-See: .planning/PROJECT.md (updated 2026-04-07)
-
-**Core value:** Task automation from submit to merge — user defines "what", platform handles "how": isolation, dependency scheduling, conflict resolution, artifact merge, failure retry.
-**Current focus:** v1.0 Complete — All 5 phases implemented
-
 ## Current Position
 
-Phase: 05 (Interface) — COMPLETED
-Plan: N/A (autonomous development)
-Status: v1.0 COMPLETE
-Last activity: 2026-04-07 -- Completed quick task 260407-w7l (Phase 01 PERS-04 card_json source-of-truth fix)
+Phase: Runtime Reliability
+Status: completed
 
-Progress: [████████████████████] 100%
+所有 PR 已完成并修复 review findings：
 
-## Quick Tasks Completed
+- PR-1：Go 直接托管 web/dist，正式看板在 8080/board
+- PR-2：启动恢复扫描 + 僵尸 running 回收 + execution reaper
+- PR-3（完整收口）：
+  - system health API + heartbeat loop + 前端心跳显示
+  - **修复 P1**：heartbeat 使用 UpdateHeartbeatOnly，不覆盖其他字段
+  - **修复 P2**：reaper 执行 timeout_at，超时强制回收
 
-| ID | Date | Summary | Artifacts |
-|---|---|---|---|
-| 260407-w7l | 2026-04-07 | Closed Phase 01 PERS-04 by making `card_json` the source of truth for task business fields and mapped API task views | `.planning/quick/260407-w7l-phase-01-pers-04-task-card-json-card-jso/260407-w7l-PLAN.md`, `.planning/quick/260407-w7l-phase-01-pers-04-task-card-json-card-jso/260407-w7l-SUMMARY.md` |
+## PR-3 最终修复
 
-## Performance Metrics
+### P1: Heartbeat isolation
 
-**Velocity:**
+问题：heartbeat goroutine 持有 payload 引用，整包 persistCompatPayload 会覆盖并发更新。
 
-- Total plans completed: 0
-- Average duration: N/A
-- Total execution time: N/A
+修复：
+- `internal/store/repository.go`：新增 `UpdateHeartbeatOnly` 方法
+- 只更新 `last_heartbeat_at` 字段，不覆盖其他字段
+- `internal/server/compat_dispatch.go`：heartbeat goroutine 使用新方法
 
-**By Phase:**
+### P2: Timeout enforcement
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01 Foundation | 2 | Complete | N/A |
-| 02 Core Engine | 1 | Complete | N/A |
-| 03 Execution Layer | 1 | Complete | N/A |
-| 04 Integration | 1 | Complete | N/A |
-| 05 Interface | 1 | Complete | N/A |
+问题：timeout_at 只是展示字段，reaper 不执行超时回收。
 
-**Recent Trend:**
+修复：
+- `internal/server/execution_reaper.go`：`isZombie` 检查 timeout_at
+- 超过 timeout_at 的任务视为 zombie，强制回收
+- 新增事件类型 `execution_timeout`（区别于 `execution_stalled`）
 
-- Last 5 plans: Autonomous development
-- Trend: v1.0 complete
+## Current Validation Baseline
 
-*Updated after each phase completion*
+- `go build ./...` 通过
+- `go test ./...` 通过
+- `web`: `npm run build` 通过
+- `web`: `npm run lint` 通过
 
-## Accumulated Context
+## Milestone Summary
 
-### Decisions
+runtime-reliability milestone 完整收口：
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- Phase 01: Standard Go Layout with cmd/server + cmd/cli dual entry
-- Phase 01: Ent ORM with SQLite (modernc.org/sqlite)
-- Phase 02: 13-state machine with explicit transition validation
-- Phase 02: Dependency validation at enqueue time
-- Phase 03: CLI transport with git worktree isolation
-- Phase 03: Reverse engineering loop with 100% match rate requirement
-- Phase 04: Single-consumer merge queue with topo_rank ordering
-- Phase 04: GSD Connector for PLAN file integration
-- Phase 05: React + Vite + TypeScript with TanStack Query
-- Phase 05: Tailwind CSS v4 with custom theme
-
-### Pending Todos
-
-[From .planning/todos/pending/ — ideas captured during sessions]
-
-None yet.
-
-### Blockers/Concerns
-
-[Issues that affect future work]
-
-None yet.
-
-## Session Continuity
-
-Last session: 2026-04-07T14:00:00.000Z
-Stopped at: v1.0 complete
-Resume file: .planning/STATE.md
+1. 只启动 8080 就能打开看板 ✓
+2. 服务重启后，旧任务会自动恢复推进 ✓
+3. 假 running 会被自动回收（按 heartbeat + timeout 判活） ✓
+4. 前端能提示后端离线和 worker 状态 ✓
+5. running 任务显示心跳时间和陈旧提示 ✓
+6. 执行中有周期性 heartbeat 更新（只更新心跳字段） ✓
+7. timeout_at 被真正执行，超时任务强制回收 ✓
+8. 不再依赖 5173 dev server ✓

@@ -1,0 +1,35 @@
+{
+    "name":  "ai-orchestration-web",
+    "private":  true,
+    "version":  "0.0.0",
+    "type":  "module",
+    "scripts":  {
+                    "dev":  "cmd /d /c \"node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js dev --config E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\vite.config.ts\"",
+                    "build":  "cmd /d /c \"node .\\\\node_modules\\\\typescript\\\\bin\\\\tsc -b \u0026\u0026 node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js build --config E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\vite.config.ts --outDir E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\dist\"",
+                    "lint":  "eslint .",
+                    "preview":  "cmd /d /c \"node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js preview --config E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\vite.config.ts\""
+                },
+    "dependencies":  {
+                         "@tanstack/react-query":  "^5.96.2",
+                         "axios":  "^1.14.0",
+                         "lucide-react":  "^1.7.0",
+                         "react":  "^19.2.4",
+                         "react-dom":  "^19.2.4",
+                         "react-router-dom":  "^7.14.0",
+                         "recharts":  "^3.8.1"
+                     },
+    "devDependencies":  {
+                            "@eslint/js":  "^9.39.4",
+                            "@types/node":  "^24.12.2",
+                            "@types/react":  "^19.2.14",
+                            "@types/react-dom":  "^19.2.3",
+                            "@vitejs/plugin-react":  "^4.7.0",
+                            "eslint":  "^9.39.4",
+                            "eslint-plugin-react-hooks":  "^7.0.1",
+                            "eslint-plugin-react-refresh":  "^0.5.2",
+                            "globals":  "^17.4.0",
+                            "typescript":  "~6.0.2",
+                            "typescript-eslint":  "^8.58.0",
+                            "vite":  "^5.4.21"
+                        }
+}

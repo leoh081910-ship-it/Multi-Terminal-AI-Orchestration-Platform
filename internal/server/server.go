@@ -2,10 +2,15 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,17 +31,34 @@ type APIResponse struct {
 
 // Server provides the HTTP API server.
 type Server struct {
-	repo   *store.Repository
-	logger zerolog.Logger
-	router *chi.Mux
+	repo     *store.Repository
+	logger   zerolog.Logger
+	router   *chi.Mux
+	projects *compatProjectRegistry
+
+	projectsMu          sync.RWMutex
+	projectConfigStore  *ProjectConfigStore
+	projectQueueManager *ProjectQueueManager
+	webDistDir          string
+
+	// PRD-DA-001 coordination workers
+	failureOrchestrator *FailureOrchestrator
+	retryWorker         *RetryWorker
+	reviewWorker        *ReviewWorker
+
+	// PR-OPS-003 worker status tracking
+	autoDispatcherActive  bool
+	ttlCleanupActive      bool
+	executionReaperActive bool
 }
 
 // New creates a new Server instance.
 func New(repo *store.Repository, logger zerolog.Logger) *Server {
 	s := &Server{
-		repo:   repo,
-		logger: logger,
-		router: chi.NewRouter(),
+		repo:       repo,
+		logger:     logger,
+		router:     chi.NewRouter(),
+		webDistDir: filepath.FromSlash("web/dist"),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -49,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) setupMiddleware() {
+	s.router.Use(s.cors)
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
@@ -74,6 +97,22 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/health", s.handleHealth)
 
 	s.router.Route("/api", func(r chi.Router) {
+		r.Route("/v1", func(r chi.Router) {
+			// PR-OPS-003: System health endpoints
+			r.Get("/system/health", s.handleSystemHealth)
+			r.Get("/system/workers", s.handleSystemWorkers)
+
+			r.Get("/projects", s.handleCompatListProjects)
+			r.Post("/projects", s.handleCompatCreateProject)
+			s.registerCompatProjectRoutes(r)
+			r.Route("/projects/{projectID}", func(r chi.Router) {
+				s.registerCompatProjectRoutes(r)
+			})
+
+			// PR-3: Recovery endpoint for stuck tasks
+			r.Post("/recovery/stuck-tasks", s.handleRecoverStuckTasks)
+		})
+
 		// Task endpoints
 		r.Route("/tasks", func(r chi.Router) {
 			r.Get("/", s.handleListTasks)
@@ -94,6 +133,31 @@ func (s *Server) setupRoutes() {
 			r.Get("/waves/{wave}", s.handleGetWave)
 			r.Put("/waves/{wave}/seal", s.handleSealWave)
 		})
+	})
+
+	s.registerStaticWebRoutes()
+}
+
+func (s *Server) registerCompatProjectRoutes(r chi.Router) {
+	r.Route("/scheduler", func(r chi.Router) {
+		r.Get("/tasks", s.handleCompatListSchedulerTasks)
+		r.Post("/tasks", s.handleCompatCreateSchedulerTask)
+		r.Patch("/tasks/{id}", s.handleCompatUpdateSchedulerTask)
+		r.Post("/tasks/{id}/dispatch", s.handleCompatDispatchSchedulerTask)
+		r.Post("/tasks/{id}/retry", s.handleCompatRetrySchedulerTask)
+		r.Get("/tasks/{id}/execution", s.handleCompatGetTaskExecution)
+		r.Get("/tasks/{id}/lineage", s.handleCompatGetTaskLineage)
+		r.Post("/tasks/{id}/triage", s.handleCompatManualTriage)
+		r.Get("/executions", s.handleCompatListExecutions)
+		r.Get("/runtimes", s.handleCompatListRuntimes)
+		r.Get("/failure-policies", s.handleCompatGetFailurePolicies)
+		r.Get("/agents", s.handleCompatGetAgents)
+	})
+	r.Route("/board", func(r chi.Router) {
+		r.Get("/summary", s.handleCompatBoardSummary)
+	})
+	r.Route("/agents", func(r chi.Router) {
+		r.Get("/summary", s.handleCompatAgentsSummary)
 	})
 }
 
@@ -289,9 +353,50 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeJSON(w, http.StatusNotImplemented, APIResponse{
-		Success: false,
-		Error:   "cancel action is not supported by the current task state machine",
+	if engine.IsTerminal(task.State) {
+		s.writeJSON(w, http.StatusOK, APIResponse{
+			Success: true,
+			Data: map[string]string{
+				"id":     id,
+				"status": task.State,
+			},
+		})
+		return
+	}
+
+	if !canCancelTaskState(task.State) {
+		s.writeJSON(w, http.StatusConflict, APIResponse{
+			Success: false,
+			Error:   "task state does not allow cancel",
+		})
+		return
+	}
+
+	if err := s.repo.UpdateTaskState(ctx, id, task.State, engine.StateFailed, "cancelled", &store.EventData{
+		EventID:   uuid.NewString(),
+		TaskID:    id,
+		EventType: "state_transition",
+		FromState: task.State,
+		ToState:   engine.StateFailed,
+		Timestamp: time.Now().UTC(),
+		Reason:    "cancelled",
+		Attempt:   task.RetryCount,
+		Transport: task.Transport,
+	}); err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Str("state", task.State).Msg("failed to cancel task")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to cancel task",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]string{
+			"id":     id,
+			"status": engine.StateFailed,
+		},
 	})
 }
 
@@ -333,7 +438,7 @@ func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
 		ToState:   engine.StateRetryWaiting,
 		Timestamp: time.Now().UTC(),
 		Reason:    "manual_retry",
-		Attempt:   task.RetryCount + 1,
+		Attempt:   task.RetryCount,
 		Transport: task.Transport,
 	}); err != nil {
 		s.logger.Error().Err(err).Str("task_id", id).Str("state", task.State).Msg("failed to retry task")
@@ -351,6 +456,23 @@ func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
 			"status": engine.StateRetryWaiting,
 		},
 	})
+}
+
+func canCancelTaskState(state string) bool {
+	switch state {
+	case engine.StateQueued,
+		engine.StateRouted,
+		engine.StateWorkspacePrepared,
+		engine.StateRunning,
+		engine.StatePatchReady,
+		engine.StateVerified,
+		engine.StateRetryWaiting,
+		engine.StateVerifyFailed,
+		engine.StateApplyFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleListTasksByDispatch(w http.ResponseWriter, r *http.Request) {
@@ -517,4 +639,438 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		s.logger.Error().Err(err).Msg("failed to encode JSON response")
 	}
+}
+
+// --- PRD-DA-001 Coordination Worker Management ---
+
+// SetCoordinationWorkers sets the coordination background workers.
+func (s *Server) SetCoordinationWorkers(orchestrator *FailureOrchestrator, retryW *RetryWorker, reviewW *ReviewWorker) {
+	s.failureOrchestrator = orchestrator
+	s.retryWorker = retryW
+	s.reviewWorker = reviewW
+}
+
+// --- PRD-DA-001 API Handlers ---
+
+// handleCompatGetTaskLineage returns the task lineage (parent/children chain).
+// GET /api/v1/projects/{project}/scheduler/tasks/{id}/lineage
+func (s *Server) handleCompatGetTaskLineage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	projectID := s.compatProjectIDFromRequest(r)
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil || task == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+	if !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	allTasks, err := s.repo.ListAllTasks(ctx)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load tasks"})
+		return
+	}
+
+	lineage := s.buildTaskLineage(task, allTasks)
+	s.writeJSON(w, http.StatusOK, lineage)
+}
+
+type compatTaskLineage struct {
+	RootTask    *compatSchedulerTask  `json:"root_task"`
+	Ancestors   []compatSchedulerTask `json:"ancestors"`
+	Descendants []compatSchedulerTask `json:"descendants"`
+	Siblings    []compatSchedulerTask `json:"siblings"`
+}
+
+func (s *Server) buildTaskLineage(task *ent.Task, allTasks []*ent.Task) compatTaskLineage {
+	payload := decodeCompatPayload(task.CardJSON)
+	parentTaskID := readString(payload, "parent_task_id")
+	rootTaskID := readString(payload, "root_task_id")
+	if rootTaskID == "" {
+		rootTaskID = task.ID
+	}
+
+	// Build a map for quick lookup
+	taskMap := make(map[string]*ent.Task)
+	taskPayloads := make(map[string]map[string]interface{})
+	for _, t := range allTasks {
+		taskMap[t.ID] = t
+		taskPayloads[t.ID] = decodeCompatPayload(t.CardJSON)
+	}
+
+	// Find root task
+	var root *compatSchedulerTask
+	if rootTask, exists := taskMap[rootTaskID]; exists {
+		mapped := s.mapCompatTask(rootTask)
+		root = &mapped
+	}
+
+	// Recursively collect all ancestors (parent chain)
+	ancestors := s.collectAncestors(task.ID, taskMap, taskPayloads)
+
+	// Recursively collect all descendants (children chain)
+	descendants := s.collectDescendants(task.ID, taskMap, taskPayloads)
+
+	// Collect siblings (same parent, excluding self)
+	var siblings []compatSchedulerTask
+	if parentTaskID != "" {
+		for _, t := range allTasks {
+			tp := taskPayloads[t.ID]
+			tParentID := readString(tp, "parent_task_id")
+			if tParentID == parentTaskID && t.ID != task.ID {
+				siblings = append(siblings, s.mapCompatTask(t))
+			}
+		}
+	}
+
+	if root == nil {
+		mapped := s.mapCompatTask(task)
+		root = &mapped
+	}
+
+	if ancestors == nil {
+		ancestors = []compatSchedulerTask{}
+	}
+	if descendants == nil {
+		descendants = []compatSchedulerTask{}
+	}
+	if siblings == nil {
+		siblings = []compatSchedulerTask{}
+	}
+
+	return compatTaskLineage{
+		RootTask:    root,
+		Ancestors:   ancestors,
+		Descendants: descendants,
+		Siblings:    siblings,
+	}
+}
+
+// collectAncestors recursively collects all ancestor tasks (parent, grandparent, etc.)
+func (s *Server) collectAncestors(taskID string, taskMap map[string]*ent.Task, taskPayloads map[string]map[string]interface{}) []compatSchedulerTask {
+	var ancestors []compatSchedulerTask
+	currentID := taskID
+
+	for {
+		tp, exists := taskPayloads[currentID]
+		if !exists {
+			break
+		}
+		parentID := readString(tp, "parent_task_id")
+		if parentID == "" {
+			break
+		}
+		if parentTask, exists := taskMap[parentID]; exists {
+			ancestors = append(ancestors, s.mapCompatTask(parentTask))
+			currentID = parentID
+		} else {
+			break
+		}
+	}
+
+	return ancestors
+}
+
+// collectDescendants recursively collects all descendant tasks (children, grandchildren, etc.)
+func (s *Server) collectDescendants(taskID string, taskMap map[string]*ent.Task, taskPayloads map[string]map[string]interface{}) []compatSchedulerTask {
+	var descendants []compatSchedulerTask
+
+	// First, find direct children
+	var children []string
+	for _, t := range taskMap {
+		tp := taskPayloads[t.ID]
+		tParentID := readString(tp, "parent_task_id")
+		if tParentID == taskID {
+			children = append(children, t.ID)
+			descendants = append(descendants, s.mapCompatTask(t))
+		}
+	}
+
+	// Recursively collect grandchildren
+	for _, childID := range children {
+		grandchildren := s.collectDescendants(childID, taskMap, taskPayloads)
+		descendants = append(descendants, grandchildren...)
+	}
+
+	return descendants
+}
+
+// handleCompatManualTriage manually triggers triage for a task.
+// POST /api/v1/projects/{project}/scheduler/tasks/{id}/triage
+func (s *Server) handleCompatManualTriage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	projectID := s.compatProjectIDFromRequest(r)
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil || task == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+	if !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	// Force task into triage state
+	payload := decodeCompatPayload(task.CardJSON)
+	reason := firstCompatNonEmpty(readString(payload, "last_dispatch_error"), readString(payload, "last_error_reason"), "manual_triage")
+
+	if task.State == engine.StateRunning || task.State == engine.StateRetryWaiting {
+		if err := s.transitionCompatTaskState(ctx, task, engine.StateTriage, "manual_triage", reason); err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to trigger triage"})
+			return
+		}
+		syncCompatPayloadState(payload, engine.StateTriage)
+		payload["coordination_stage"] = "triage"
+		_ = s.persistCompatPayload(ctx, id, payload)
+	}
+
+	updatedTask, _ := s.repo.GetTaskByID(ctx, id)
+	s.writeJSON(w, http.StatusOK, s.mapCompatTask(updatedTask))
+}
+
+// handleCompatGetFailurePolicies returns the current failure policy configuration.
+// GET /api/v1/projects/{project}/scheduler/failure-policies
+func (s *Server) handleCompatGetFailurePolicies(w http.ResponseWriter, r *http.Request) {
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"max_auto_repairs":  MaxAutoRepairs,
+		"max_auto_retries":  MaxAutoRetries,
+		"backoff_intervals": []string{"30s", "60s"},
+		"failure_codes": []map[string]string{
+			{"code": "artifact_missing", "description": "Artifact was not generated", "retryable": "true"},
+			{"code": "artifact_spec_mismatch", "description": "Artifact path is incorrectly configured", "retryable": "true"},
+			{"code": "git_no_changes", "description": "Nothing to commit, working tree clean", "retryable": "true"},
+			{"code": "command_exit_nonzero", "description": "Command exited with non-zero status", "retryable": "true"},
+			{"code": "workspace_write_failed", "description": "Failed to write to workspace", "retryable": "true"},
+			{"code": "dependency_failed", "description": "Dependency task failed", "retryable": "false"},
+			{"code": "non_retryable_failure", "description": "Unclassified non-retryable failure", "retryable": "false"},
+		},
+	})
+}
+
+// handleCompatGetAgents returns agent configuration including system roles.
+// GET /api/v1/projects/{project}/scheduler/agents
+func (s *Server) handleCompatGetAgents(w http.ResponseWriter, r *http.Request) {
+	agents := []map[string]interface{}{
+		{"agent_id": "Claude", "agent_role": "executor", "capabilities": []string{"can_execute", "can_triage"}, "specialties": []string{"spec", "no-op review", "analysis"}, "enabled": true},
+		{"agent_id": "Gemini", "agent_role": "executor", "capabilities": []string{"can_execute"}, "specialties": []string{"UI", "frontend fix", "content remediation"}, "enabled": true},
+		{"agent_id": "Codex", "agent_role": "executor", "capabilities": []string{"can_execute", "can_retry"}, "specialties": []string{"code fix", "artifact path fix", "debug"}, "enabled": true},
+		{"agent_id": "Coordinator", "agent_role": "system", "capabilities": []string{"can_triage"}, "specialties": []string{"failure triage", "auto-dispatch"}, "enabled": true},
+		{"agent_id": "Reviewer", "agent_role": "system", "capabilities": []string{"can_review"}, "specialties": []string{"code review", "rework decision"}, "enabled": true},
+	}
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{"agents": agents})
+}
+
+// handleRecoverStuckTasks handles PR-3: recovery of tasks stuck due to platform defects.
+// POST /api/v1/recovery/stuck-tasks
+// Body: {"task_ids": ["TS-xxx", ...], "reason": "platform_defect"}
+func (s *Server) handleRecoverStuckTasks(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TaskIDs []string `json:"task_ids"`
+		Reason  string   `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Invalid request body"})
+		return
+	}
+	if len(req.TaskIDs) == 0 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "task_ids required"})
+		return
+	}
+	if req.Reason == "" {
+		req.Reason = "platform_defect"
+	}
+
+	ctx := r.Context()
+	recovered := make([]map[string]string, 0, len(req.TaskIDs))
+
+	for _, taskID := range req.TaskIDs {
+		result := s.recoverStuckTask(ctx, taskID, req.Reason)
+		recovered = append(recovered, result)
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"recovered": recovered,
+		"count":     len(recovered),
+	})
+}
+
+// recoverStuckTask attempts to recover a single stuck task.
+// PR-3: For tasks stuck in blocked/retry_waiting/review_pending due to platform defects:
+// 1. Retires old failed sub-tasks (marks as done so they don't count against repair budget)
+// 2. Resets the root task to retry_waiting so the retry worker can pick it up
+func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) map[string]string {
+	result := map[string]string{"task_id": taskID}
+
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil || task == nil {
+		result["status"] = "not_found"
+		result["error"] = "task not found"
+		return result
+	}
+
+	payload := decodeCompatPayload(task.CardJSON)
+
+	switch task.State {
+	case engine.StateFailed:
+		// Blocked (failed) — retire bad children, reset parent
+		retiredCount := s.retireFailedChildren(ctx, taskID)
+		// Reset repair budget
+		payload["auto_repair_count"] = 0
+		payload["coordination_stage"] = "recovery"
+		payload["failure_code"] = ""
+		payload["failure_signature"] = ""
+		payload["last_dispatch_error"] = ""
+		payload["last_error_reason"] = ""
+
+		// Transition failed → retry_waiting
+		if err := s.transitionCompatTaskState(ctx, task, engine.StateRetryWaiting, "recovery_"+reason, ""); err != nil {
+			result["status"] = "transition_failed"
+			result["error"] = err.Error()
+			return result
+		}
+		syncCompatPayloadState(payload, engine.StateRetryWaiting)
+		payload["dispatch_status"] = "failed"
+		payload["status"] = "ready"
+		payload["execution_session_id"] = nil
+		_ = s.persistCompatPayload(ctx, taskID, payload)
+
+		result["status"] = "recovered"
+		result["new_state"] = engine.StateRetryWaiting
+		result["children_retired"] = fmt.Sprintf("%d", retiredCount)
+
+	case engine.StateVerifyFailed, engine.StateApplyFailed:
+		retiredCount := s.retireFailedChildren(ctx, taskID)
+		noopMergeFailure := isNoopMergeFailure(task, payload)
+		payload["auto_repair_count"] = 0
+		payload["failure_code"] = ""
+		payload["failure_signature"] = ""
+		payload["last_dispatch_error"] = ""
+		payload["last_error_reason"] = ""
+		payload["execution_session_id"] = nil
+
+		if noopMergeFailure {
+			if err := s.transitionCompatTaskState(ctx, task, engine.StateVerified, "recovery_"+reason, "recover noop merge failure"); err != nil {
+				result["status"] = "transition_failed"
+				result["error"] = err.Error()
+				return result
+			}
+			syncCompatPayloadState(payload, engine.StateVerified)
+			payload["coordination_stage"] = "recovery_approved"
+			payload["dispatch_status"] = "completed"
+			payload["status"] = "verified"
+			payload["review_decision"] = firstCompatNonEmpty(readString(payload, "review_decision"), "approved")
+			_ = s.persistCompatPayload(ctx, taskID, payload)
+
+			result["status"] = "recovered"
+			result["new_state"] = engine.StateVerified
+			result["children_retired"] = fmt.Sprintf("%d", retiredCount)
+			break
+		}
+
+		if err := s.transitionCompatTaskState(ctx, task, engine.StateRetryWaiting, "recovery_"+reason, "recover verification/apply failure"); err != nil {
+			result["status"] = "transition_failed"
+			result["error"] = err.Error()
+			return result
+		}
+		syncCompatPayloadState(payload, engine.StateRetryWaiting)
+		payload["coordination_stage"] = "recovery"
+		payload["dispatch_status"] = "failed"
+		payload["status"] = "ready"
+		_ = s.persistCompatPayload(ctx, taskID, payload)
+
+		result["status"] = "recovered"
+		result["new_state"] = engine.StateRetryWaiting
+		result["children_retired"] = fmt.Sprintf("%d", retiredCount)
+
+	case engine.StateRetryWaiting:
+		// Already in retry_waiting but may be stuck by failed children
+		retiredCount := s.retireFailedChildren(ctx, taskID)
+		payload["auto_repair_count"] = 0
+		_ = s.persistCompatPayload(ctx, taskID, payload)
+
+		result["status"] = "recovered"
+		result["new_state"] = engine.StateRetryWaiting
+		result["children_retired"] = fmt.Sprintf("%d", retiredCount)
+
+	case engine.StateReviewPending:
+		// Stuck in review — auto-approve
+		if err := s.transitionCompatTaskState(ctx, task, engine.StateVerified, "recovery_"+reason, ""); err != nil {
+			result["status"] = "transition_failed"
+			result["error"] = err.Error()
+			return result
+		}
+		syncCompatPayloadState(payload, engine.StateVerified)
+		payload["review_decision"] = "approved"
+		payload["coordination_stage"] = "recovery_approved"
+		payload["dispatch_status"] = "completed"
+		payload["status"] = "verified"
+		payload["execution_session_id"] = nil
+		_ = s.persistCompatPayload(ctx, taskID, payload)
+
+		result["status"] = "recovered"
+		result["new_state"] = engine.StateVerified
+
+	default:
+		result["status"] = "not_recoverable"
+		result["current_state"] = task.State
+	}
+
+	return result
+}
+
+func isNoopMergeFailure(task *ent.Task, payload map[string]interface{}) bool {
+	lastError := strings.ToLower(strings.TrimSpace(firstCompatNonEmpty(
+		task.LastErrorReason,
+		readString(payload, "last_dispatch_error"),
+		readString(payload, "last_error_reason"),
+	)))
+	if lastError == "" {
+		return false
+	}
+
+	return strings.Contains(lastError, "nothing to commit") ||
+		strings.Contains(lastError, "working tree clean")
+}
+
+// retireFailedChildren marks failed child tasks as done so they no longer
+// count against the parent's repair budget.
+func (s *Server) retireFailedChildren(ctx context.Context, parentTaskID string) int {
+	allTasks, err := s.repo.ListAllTasks(ctx)
+	if err != nil {
+		return 0
+	}
+
+	retired := 0
+	for _, t := range allTasks {
+		if t.ID == parentTaskID {
+			continue
+		}
+		payload := decodeCompatPayload(t.CardJSON)
+		parentID := readString(payload, "parent_task_id")
+		if parentID != parentTaskID {
+			continue
+		}
+		// Only retire tasks in failure states
+		if t.State == engine.StateFailed || t.State == engine.StateVerifyFailed ||
+			t.State == engine.StateApplyFailed || t.State == engine.StateTriage {
+			// Transition to done (via verified for valid state path)
+			if err := s.transitionCompatTaskState(ctx, t, engine.StateDone, "retired_by_recovery", ""); err != nil {
+				s.logger.Warn().Err(err).Str("task_id", t.ID).Msg("failed to retire child task during recovery")
+				continue
+			}
+			payload["dispatch_status"] = "completed"
+			payload["status"] = "done"
+			payload["coordination_stage"] = "retired"
+			_ = s.persistCompatPayload(ctx, t.ID, payload)
+			retired++
+		}
+	}
+
+	return retired
 }

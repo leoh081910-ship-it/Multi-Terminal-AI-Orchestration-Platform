@@ -1,0 +1,61 @@
+database:
+    path: ai-orchestration.db
+server:
+    host: 0.0.0.0
+    port: 8080
+web:
+    dist_dir: web/dist
+auto_dispatch:
+    enabled: true
+    interval_ms: 2000
+ttl_cleanup:
+    enabled: true
+    interval_ms: 60000
+projects:
+    default: tiktok_shop_xuanping
+    items:
+        - id: tiktok_shop_xuanping
+          name: TikTok Shop Selection
+          repo_root: E:/06 gemini/tiktok_shop_xuanping
+          worktree_base: E:/06 gemini/tiktok_shop_xuanping/.orchestrator/worktrees
+          workspace_base: E:/06 gemini/tiktok_shop_xuanping/.orchestrator/workspaces
+          artifact_base: E:/06 gemini/tiktok_shop_xuanping/.orchestrator/artifacts
+          claude:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/claude.ps1'''
+            shell: powershell
+          gemini:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/gemini.ps1'''
+            shell: powershell
+          codex:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/codex.ps1'''
+            shell: powershell
+        - id: workflow-library-system
+          name: workflow-library-system
+          repo_root: E:\04-Claude\Projects\workflow-library-system
+          worktree_base: E:\04-Claude\Projects\workflow-library-system\.orchestrator\worktrees
+          workspace_base: E:\04-Claude\Projects\workflow-library-system\.orchestrator\workspaces
+          artifact_base: E:\04-Claude\Projects\workflow-library-system\.orchestrator\artifacts
+          claude:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/claude.ps1'''
+            shell: powershell
+          gemini:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/gemini.ps1'''
+            shell: powershell
+          codex:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/codex.ps1'''
+            shell: powershell
+        - id: jiandou
+          name: jiandou
+          repo_root: E:\04-Claude\Projects\JianDou
+          worktree_base: E:\04-Claude\Projects\JianDou\.orchestrator\worktrees
+          workspace_base: E:\04-Claude\Projects\JianDou\.orchestrator\workspaces
+          artifact_base: E:\04-Claude\Projects\JianDou\.orchestrator\artifacts
+          claude:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/claude.ps1'''
+            shell: powershell
+          gemini:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/gemini.ps1'''
+            shell: powershell
+          codex:
+            command: '& ''E:/04-Claude/Projects/ai-orchestration-platform/scripts/runtime/codex.ps1'''
+            shell: powershell

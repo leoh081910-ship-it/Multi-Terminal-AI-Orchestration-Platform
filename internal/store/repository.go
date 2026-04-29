@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
@@ -16,6 +17,7 @@ import (
 
 // TaskCard represents the JSON structure for task creation/updates.
 type TaskCard struct {
+	ProjectID          string `json:"project_id,omitempty"`
 	ID                 string `json:"id"`
 	DispatchRef        string `json:"dispatch_ref"`
 	State              string `json:"state"`
@@ -32,6 +34,7 @@ type TaskCard struct {
 
 // TaskView is the API-facing task projection built from card_json plus runtime fields.
 type TaskView struct {
+	ProjectID          string    `json:"project_id,omitempty"`
 	ID                 string    `json:"id"`
 	DispatchRef        string    `json:"dispatch_ref"`
 	State              string    `json:"state"`
@@ -50,6 +53,7 @@ type TaskView struct {
 }
 
 type taskCardJSONPayload struct {
+	ProjectID          *string `json:"project_id"`
 	ID                 *string `json:"id"`
 	DispatchRef        *string `json:"dispatch_ref"`
 	State              *string `json:"state"`
@@ -66,6 +70,7 @@ type taskCardJSONPayload struct {
 // EventData represents the event structure for logging.
 type EventData struct {
 	EventID   string
+	ProjectID string
 	TaskID    string
 	EventType string
 	FromState string
@@ -123,6 +128,9 @@ func (r *Repository) CreateTask(ctx context.Context, card *TaskCard) (string, er
 	if derived.ID == "" {
 		return "", errors.New("task id is required")
 	}
+	if derived.ProjectID == "" {
+		return "", errors.New("project_id is required")
+	}
 	if derived.DispatchRef == "" {
 		return "", errors.New("dispatch_ref is required")
 	}
@@ -133,6 +141,7 @@ func (r *Repository) CreateTask(ctx context.Context, card *TaskCard) (string, er
 	now := time.Now().UTC()
 	t, err := r.client.Task.Create().
 		SetID(derived.ID).
+		SetProjectID(derived.ProjectID).
 		SetDispatchRef(derived.DispatchRef).
 		SetState(derived.State).
 		SetRetryCount(derived.RetryCount).
@@ -160,12 +169,24 @@ func (r *Repository) CreateTask(ctx context.Context, card *TaskCard) (string, er
 // This is required by PERS-05: event and task updates must be in the same SQLite transaction.
 func (r *Repository) UpdateTaskState(ctx context.Context, taskID, fromState, toState, reason string, eventData *EventData) error {
 	return r.WithTx(ctx, func(tx *ent.Tx) error {
+		now := time.Now().UTC()
+
 		// Update task state
-		updated, err := tx.Task.Update().
+		update := tx.Task.Update().
 			Where(task.ID(taskID), task.State(fromState)).
 			SetState(toState).
-			SetUpdatedAt(time.Now().UTC()).
-			Save(ctx)
+			SetUpdatedAt(now)
+
+		if consumesRetry(reason) {
+			update.AddRetryCount(1)
+		}
+		if isTerminalState(toState) {
+			update.SetTerminalAt(now)
+		} else {
+			update.ClearTerminalAt()
+		}
+
+		updated, err := update.Save(ctx)
 
 		if err != nil {
 			return fmt.Errorf("failed to update task state: %w", err)
@@ -175,18 +196,30 @@ func (r *Repository) UpdateTaskState(ctx context.Context, taskID, fromState, toS
 			return errors.New("task not found or state mismatch")
 		}
 
+		updatedTask, err := tx.Task.Query().
+			Where(task.ID(taskID)).
+			Only(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load updated task: %w", err)
+		}
+
 		// Create event in the same transaction
 		if eventData != nil {
-			now := time.Now().UTC()
+			eventTimestamp := eventData.Timestamp
+			if eventTimestamp.IsZero() {
+				eventTimestamp = now
+			}
+
 			_, err = tx.Event.Create().
 				SetEventID(eventData.EventID).
+				SetProjectID(firstNonEmpty(updatedTask.ProjectID, eventData.ProjectID, "default")).
 				SetTaskID(taskID).
 				SetEventType(eventData.EventType).
 				SetFromState(fromState).
 				SetToState(toState).
-				SetTimestamp(now).
+				SetTimestamp(eventTimestamp).
 				SetReason(reason).
-				SetAttempt(eventData.Attempt).
+				SetAttempt(updatedTask.RetryCount).
 				SetTransport(eventData.Transport).
 				SetRunnerID(eventData.RunnerID).
 				SetDetails(eventData.Details).
@@ -225,6 +258,18 @@ func (r *Repository) ListTasksByDispatchRef(ctx context.Context, dispatchRef str
 	return tasks, nil
 }
 
+// ListTasksByState retrieves all tasks in a given state.
+func (r *Repository) ListTasksByState(ctx context.Context, state string) ([]*ent.Task, error) {
+	tasks, err := r.client.Task.Query().
+		Where(task.State(state)).
+		All(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks by state: %w", err)
+	}
+	return tasks, nil
+}
+
 // ListAllTasks retrieves all tasks.
 func (r *Repository) ListAllTasks(ctx context.Context) ([]*ent.Task, error) {
 	tasks, err := r.client.Task.Query().
@@ -252,6 +297,7 @@ func (r *Repository) UpdateTask(ctx context.Context, taskID string, updates *Tas
 	}
 
 	_, err = r.client.Task.UpdateOneID(taskID).
+		SetProjectID(derived.ProjectID).
 		SetDispatchRef(derived.DispatchRef).
 		SetState(derived.State).
 		SetRetryCount(derived.RetryCount).
@@ -271,6 +317,93 @@ func (r *Repository) UpdateTask(ctx context.Context, taskID string, updates *Tas
 	}
 
 	return nil
+	}
+
+	// UpdateHeartbeatOnly updates only the last_heartbeat_at field in card_json.
+	// PR-OPS-003: This is a lightweight heartbeat update that doesn't clobber other concurrent edits.
+	// Returns nil if task not found or not in running state.
+	func (r *Repository) UpdateHeartbeatOnly(ctx context.Context, taskID string, heartbeatTime time.Time) error {
+		existing, err := r.client.Task.Get(ctx, taskID)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil // task gone, nothing to update
+			}
+			return fmt.Errorf("failed to get task for heartbeat: %w", err)
+		}
+
+		// Only update heartbeat for running tasks
+		if existing.State != "running" {
+			return nil // task no longer running, stop heartbeat
+		}
+
+		// Parse card_json, update only last_heartbeat_at
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(existing.CardJSON), &payload); err != nil {
+			return fmt.Errorf("failed to parse card_json for heartbeat: %w", err)
+		}
+
+		payload["last_heartbeat_at"] = heartbeatTime.Format(time.RFC3339)
+
+		updatedCardJSON, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal card_json for heartbeat: %w", err)
+		}
+
+		// Only update card_json and updated_at, nothing else
+		_, err = r.client.Task.UpdateOneID(taskID).
+			SetCardJSON(string(updatedCardJSON)).
+			SetUpdatedAt(time.Now().UTC()).
+			Save(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to save heartbeat: %w", err)
+		}
+
+		return nil
+	}
+
+	// CleanupTaskResources removes persisted workspace and artifact directories for a task,
+// then clears their paths from both structured columns and card_json.
+func (r *Repository) CleanupTaskResources(ctx context.Context, taskID string) (bool, error) {
+	existing, err := r.client.Task.Get(ctx, taskID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get task for cleanup: %w", err)
+	}
+
+	view, err := BuildTaskView(existing)
+	if err != nil {
+		return false, fmt.Errorf("failed to build task view for cleanup: %w", err)
+	}
+
+	paths := uniqueNonEmptyStrings(view.WorkspacePath, view.ArtifactPath)
+	if len(paths) == 0 {
+		return false, nil
+	}
+
+	for _, path := range paths {
+		if err := os.RemoveAll(path); err != nil {
+			return false, fmt.Errorf("failed to remove task resource %s: %w", path, err)
+		}
+	}
+
+	cardJSON, err := clearTaskResourcePaths(view.CardJSON)
+	if err != nil {
+		return false, err
+	}
+
+	if _, err := r.client.Task.UpdateOneID(taskID).
+		SetWorkspacePath("").
+		SetArtifactPath("").
+		SetUpdatedAt(time.Now().UTC()).
+		SetCardJSON(cardJSON).
+		Save(ctx); err != nil {
+		return false, fmt.Errorf("failed to clear task resource paths: %w", err)
+	}
+
+	return true, nil
 }
 
 // BuildTaskView reconstructs an API-facing task from card_json plus runtime state.
@@ -280,6 +413,7 @@ func BuildTaskView(t *ent.Task) (*TaskView, error) {
 	}
 
 	base := &TaskCard{
+		ProjectID:          t.ProjectID,
 		ID:                 t.ID,
 		DispatchRef:        t.DispatchRef,
 		State:              t.State,
@@ -300,6 +434,7 @@ func BuildTaskView(t *ent.Task) (*TaskView, error) {
 	}
 
 	view := &TaskView{
+		ProjectID:          firstNonEmpty(derived.ProjectID, t.ProjectID),
 		ID:                 firstNonEmpty(derived.ID, t.ID),
 		DispatchRef:        firstNonEmpty(derived.DispatchRef, t.DispatchRef),
 		State:              t.State,
@@ -320,6 +455,27 @@ func BuildTaskView(t *ent.Task) (*TaskView, error) {
 	return view, err
 }
 
+func clearTaskResourcePaths(cardJSON string) (string, error) {
+	if cardJSON == "" {
+		return "", errors.New("invalid card_json: empty")
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(cardJSON), &payload); err != nil {
+		return "", fmt.Errorf("invalid card_json: %w", err)
+	}
+
+	payload["workspace_path"] = ""
+	payload["artifact_path"] = ""
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal cleanup card_json: %w", err)
+	}
+
+	return string(encoded), nil
+}
+
 // CreateEvent creates a new event (standalone, not within transaction).
 func (r *Repository) CreateEvent(ctx context.Context, eventData *EventData) error {
 	if eventData.Timestamp.IsZero() {
@@ -328,6 +484,7 @@ func (r *Repository) CreateEvent(ctx context.Context, eventData *EventData) erro
 
 	_, err := r.client.Event.Create().
 		SetEventID(eventData.EventID).
+		SetProjectID(firstNonEmpty(eventData.ProjectID, projectIDForTaskID(ctx, r.client, eventData.TaskID), "default")).
 		SetTaskID(eventData.TaskID).
 		SetEventType(eventData.EventType).
 		SetFromState(eventData.FromState).
@@ -350,10 +507,11 @@ func (r *Repository) CreateEvent(ctx context.Context, eventData *EventData) erro
 // UpsertWave creates or updates a wave.
 func (r *Repository) UpsertWave(ctx context.Context, dispatchRef string, waveNum int) error {
 	now := time.Now().UTC()
+	projectID := projectIDForDispatchRef(ctx, r.client, dispatchRef)
 
 	// Try to get existing wave
 	existing, err := r.client.Wave.Query().
-		Where(wave.DispatchRef(dispatchRef), wave.Wave(waveNum)).
+		Where(wave.ProjectID(projectID), wave.DispatchRef(dispatchRef), wave.Wave(waveNum)).
 		Only(ctx)
 
 	if err == nil {
@@ -373,6 +531,7 @@ func (r *Repository) UpsertWave(ctx context.Context, dispatchRef string, waveNum
 
 	// Create new wave
 	_, err = r.client.Wave.Create().
+		SetProjectID(projectID).
 		SetDispatchRef(dispatchRef).
 		SetWave(waveNum).
 		SetCreatedAt(now).
@@ -387,8 +546,9 @@ func (r *Repository) UpsertWave(ctx context.Context, dispatchRef string, waveNum
 
 // GetWave retrieves a wave by dispatch reference and wave number.
 func (r *Repository) GetWave(ctx context.Context, dispatchRef string, waveNum int) (*ent.Wave, error) {
+	projectID := projectIDForDispatchRef(ctx, r.client, dispatchRef)
 	w, err := r.client.Wave.Query().
-		Where(wave.DispatchRef(dispatchRef), wave.Wave(waveNum)).
+		Where(wave.ProjectID(projectID), wave.DispatchRef(dispatchRef), wave.Wave(waveNum)).
 		Only(ctx)
 
 	if err != nil {
@@ -402,8 +562,9 @@ func (r *Repository) GetWave(ctx context.Context, dispatchRef string, waveNum in
 
 // SealWave marks a wave as sealed.
 func (r *Repository) SealWave(ctx context.Context, dispatchRef string, waveNum int) error {
+	projectID := projectIDForDispatchRef(ctx, r.client, dispatchRef)
 	w, err := r.client.Wave.Query().
-		Where(wave.DispatchRef(dispatchRef), wave.Wave(waveNum)).
+		Where(wave.ProjectID(projectID), wave.DispatchRef(dispatchRef), wave.Wave(waveNum)).
 		Only(ctx)
 
 	if err != nil {
@@ -441,6 +602,7 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 	}
 
 	derived := &TaskCard{
+		ProjectID:          chooseString(payload.ProjectID, existingString(existing, func(t *ent.Task) string { return t.ProjectID }), "default"),
 		ID:                 chooseString(payload.ID, existingString(existing, func(t *ent.Task) string { return t.ID })),
 		DispatchRef:        chooseString(payload.DispatchRef, existingString(existing, func(t *ent.Task) string { return t.DispatchRef })),
 		State:              chooseString(payload.State, existingString(existing, func(t *ent.Task) string { return t.State })),
@@ -458,6 +620,9 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 	if derived.ID == "" {
 		return nil, errors.New("invalid card_json: missing id")
 	}
+	if derived.ProjectID == "" {
+		return nil, errors.New("invalid card_json: missing project_id")
+	}
 	if derived.DispatchRef == "" {
 		return nil, errors.New("invalid card_json: missing dispatch_ref")
 	}
@@ -471,11 +636,19 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 	return derived, nil
 }
 
-func chooseString(value *string, existing string) string {
+func chooseString(value *string, existing string, fallbacks ...string) string {
 	if value != nil {
 		return *value
 	}
-	return existing
+	if existing != "" {
+		return existing
+	}
+	for _, fallback := range fallbacks {
+		if fallback != "" {
+			return fallback
+		}
+	}
+	return ""
 }
 
 func chooseInt(value *int, existing int) int {
@@ -506,4 +679,65 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func uniqueNonEmptyStrings(values ...string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func projectIDForDispatchRef(ctx context.Context, client *ent.Client, dispatchRef string) string {
+	if dispatchRef == "" {
+		return "default"
+	}
+
+	taskRow, err := client.Task.Query().
+		Where(task.DispatchRef(dispatchRef)).
+		Order(ent.Desc(task.FieldCreatedAt)).
+		First(ctx)
+	if err == nil && taskRow != nil && taskRow.ProjectID != "" {
+		return taskRow.ProjectID
+	}
+	return "default"
+}
+
+func projectIDForTaskID(ctx context.Context, client *ent.Client, taskID string) string {
+	if taskID == "" {
+		return ""
+	}
+	taskRow, err := client.Task.Get(ctx, taskID)
+	if err == nil && taskRow != nil {
+		return taskRow.ProjectID
+	}
+	return ""
+}
+
+func consumesRetry(reason string) bool {
+	switch reason {
+	case "execution_failure",
+		"workspace_write_failed",
+		"empty_artifact_match",
+		"deterministic_check_failed",
+		"test_command_failed",
+		"reverse_loop_exhausted",
+		"reverse_env_unavailable":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalState(state string) bool {
+	return state == "done" || state == "failed"
 }

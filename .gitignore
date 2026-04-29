@@ -1,0 +1,30 @@
+﻿# Go
+bin/
+*.exe
+*.test
+*.out
+
+# Database
+ai-orchestration.db
+ai-orchestration.db-shm
+ai-orchestration.db-wal
+
+# Logs
+*.log
+server-live.log
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Legacy frontend archive artifacts
+web/_legacy_20260410/build-output.log
+web/_legacy_20260410/build-output.txt
+web/_legacy_20260410/build-review.log
+
+# Runtime artifacts
+.orchestrator/
+.runlogs/
+
+# Planning artifacts (GSD)
+.planning/codebase/
