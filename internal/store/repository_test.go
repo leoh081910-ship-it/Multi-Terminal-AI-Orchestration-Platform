@@ -12,7 +12,6 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/event"
-	"github.com/mCP-DevOS/ai-orchestration-platform/ent/migrate"
 	"github.com/rs/zerolog"
 	_ "modernc.org/sqlite"
 )
@@ -29,7 +28,7 @@ func setupTestDB(t *testing.T) (*Repository, func()) {
 	client := ent.NewClient(ent.Driver(drv))
 
 	ctx := context.Background()
-	err = client.Schema.Create(ctx, migrate.WithGlobalUniqueID(true))
+	err = client.Schema.Create(ctx)
 	if err != nil {
 		t.Fatalf("failed to create schema: %v", err)
 	}

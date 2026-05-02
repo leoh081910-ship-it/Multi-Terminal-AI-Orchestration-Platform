@@ -1101,6 +1101,10 @@ func compatWorkflowState(status, dispatchStatus string) string {
 		return engine.StateTriage
 	case "review_pending":
 		return engine.StateReviewPending
+	case "decomposing":
+		return engine.StateDecomposing
+	case "awaiting_approval":
+		return engine.StateAwaitingApproval
 	}
 
 	switch dispatchStatus {
@@ -1220,6 +1224,12 @@ func mapCompatWorkflowStatus(state string) string {
 		return "triage"
 	case engine.StateReviewPending:
 		return "review_pending"
+	case engine.StateDecomposing:
+		return "in_progress"
+	case engine.StateAwaitingApproval:
+		return "review"
+	case engine.StateBlocked:
+		return "blocked"
 	default:
 		return "backlog"
 	}
@@ -1243,6 +1253,12 @@ func mapCompatDispatchStatus(state string) string {
 		return "triage"
 	case engine.StateReviewPending:
 		return "review_pending"
+	case engine.StateDecomposing:
+		return "running"
+	case engine.StateAwaitingApproval:
+		return "completed"
+	case engine.StateBlocked:
+		return "failed"
 	default:
 		return "pending"
 	}

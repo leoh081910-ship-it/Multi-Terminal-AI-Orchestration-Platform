@@ -22,6 +22,8 @@ import (
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/migrate"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/server"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 )
@@ -73,6 +75,11 @@ func main() {
 	viper.SetDefault("ttl_cleanup.enabled", true)
 	viper.SetDefault("ttl_cleanup.interval_ms", 60000)
 	viper.SetDefault("web.dist_dir", "web/dist")
+	viper.SetDefault("routing.strategy", "weighted")
+	viper.SetDefault("routing.fallback", "manual")
+	viper.SetDefault("routing.weights.capability", 0.5)
+	viper.SetDefault("routing.weights.load", 0.3)
+	viper.SetDefault("routing.weights.affinity", 0.2)
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Warn().Err(err).Msg("config file not found, using defaults")
@@ -103,6 +110,7 @@ func main() {
 
 	// Run auto-migration
 	ctx := context.Background()
+	db.Exec("CREATE TABLE IF NOT EXISTS sqlite_sequence (name TEXT, seq INTEGER)")
 	if err := client.Schema.Create(
 		ctx,
 		migrate.WithGlobalUniqueID(true),
@@ -115,6 +123,25 @@ func main() {
 	repo := store.NewRepository(client, &log.Logger)
 	srv := server.New(repo, log.Logger)
 	srv.SetWebDistDir(viper.GetString("web.dist_dir"))
+
+	// Phase 5: Initialize intelligent router
+	routingCfg := router.Config{
+		Strategy: router.Strategy(viper.GetString("routing.strategy")),
+		Fallback: router.Strategy(viper.GetString("routing.fallback")),
+		Weights: router.Weights{
+			Capability: viper.GetFloat64("routing.weights.capability"),
+			Load:       viper.GetFloat64("routing.weights.load"),
+			Affinity:   viper.GetFloat64("routing.weights.affinity"),
+		},
+	}
+	orgSvc := org.NewService(client)
+	taskRouter := router.NewRouter(routingCfg, orgSvc, client, log.Logger)
+	srv.SetTaskRouter(taskRouter)
+
+	// Phase 6: Bootstrap default org and legacy agents for backward compatibility
+	if err := server.Bootstrap(context.Background(), orgSvc, log.Logger); err != nil {
+		log.Error().Err(err).Msg("bootstrap failed (non-fatal)")
+	}
 	projectsConfig := loadCompatProjectsConfig()
 	if err := srv.ConfigureCompatProjects(projectsConfig); err != nil {
 		log.Fatal().Err(err).Msg("failed to configure projects")

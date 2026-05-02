@@ -112,7 +112,16 @@ func (a *MergeQueueRepositoryAdapter) UpdateTaskState(ctx context.Context, taskI
 		return nil
 	}
 
-	return a.syncCompatPayload(ctx, taskID, toState, reason)
+	if err := a.syncCompatPayload(ctx, taskID, toState, reason); err != nil {
+		return err
+	}
+
+	// Phase 2: check if parent should be auto-promoted when child reaches done
+	if toState == engine.StateDone {
+		_ = a.repo.CheckAndPromoteParent(ctx, taskID)
+	}
+
+	return nil
 }
 
 func requiresCompatPayloadSync(state string) bool {

@@ -8,6 +8,13 @@ web:
 auto_dispatch:
     enabled: true
     interval_ms: 2000
+routing:
+    strategy: weighted
+    fallback: manual
+    weights:
+        capability: 0.5
+        load: 0.3
+        affinity: 0.2
 ttl_cleanup:
     enabled: true
     interval_ms: 60000

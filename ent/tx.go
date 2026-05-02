@@ -12,10 +12,28 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// Agent is the client for interacting with the Agent builders.
+	Agent *AgentClient
+	// ContextEntry is the client for interacting with the ContextEntry builders.
+	ContextEntry *ContextEntryClient
+	// Department is the client for interacting with the Department builders.
+	Department *DepartmentClient
+	// Document is the client for interacting with the Document builders.
+	Document *DocumentClient
 	// Event is the client for interacting with the Event builders.
 	Event *EventClient
+	// KnowledgeSpace is the client for interacting with the KnowledgeSpace builders.
+	KnowledgeSpace *KnowledgeSpaceClient
+	// Message is the client for interacting with the Message builders.
+	Message *MessageClient
+	// Organization is the client for interacting with the Organization builders.
+	Organization *OrganizationClient
+	// Role is the client for interacting with the Role builders.
+	Role *RoleClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// Team is the client for interacting with the Team builders.
+	Team *TeamClient
 	// Wave is the client for interacting with the Wave builders.
 	Wave *WaveClient
 
@@ -149,8 +167,17 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.Agent = NewAgentClient(tx.config)
+	tx.ContextEntry = NewContextEntryClient(tx.config)
+	tx.Department = NewDepartmentClient(tx.config)
+	tx.Document = NewDocumentClient(tx.config)
 	tx.Event = NewEventClient(tx.config)
+	tx.KnowledgeSpace = NewKnowledgeSpaceClient(tx.config)
+	tx.Message = NewMessageClient(tx.config)
+	tx.Organization = NewOrganizationClient(tx.config)
+	tx.Role = NewRoleClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
+	tx.Team = NewTeamClient(tx.config)
 	tx.Wave = NewWaveClient(tx.config)
 }
 
@@ -161,7 +188,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Event.QueryXXX(), the query will be executed
+// applies a query, for example: Agent.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

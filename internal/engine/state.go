@@ -24,6 +24,11 @@ const (
 	// Coordination states (PRD-DA-001).
 	StateTriage        = "triage"
 	StateReviewPending = "review_pending"
+
+	// Phase 2: decomposition states.
+	StateDecomposing      = "decomposing"
+	StateAwaitingApproval = "awaiting_approval"
+	StateBlocked          = "blocked"
 )
 
 // terminalStates are the only valid end states for a task.
@@ -37,7 +42,9 @@ var terminalStates = map[string]bool{
 // Key = from state, Value = set of allowed to states.
 var validTransitions = map[string]map[string]bool{
 	StateQueued: {
-		StateRouted: true,
+		StateRouted:       true,
+		StateDecomposing:  true, // Phase 2: goal enters decomposition
+		StateBlocked:      true, // Phase 2: blocked on external input
 	},
 	StateRouted: {
 		StateWorkspacePrepared: true,
@@ -83,6 +90,19 @@ var validTransitions = map[string]map[string]bool{
 	StateFailed: {
 		StateRetryWaiting: true, // PR-3: recovery path for platform-defect blocked tasks
 	},
+	// Phase 2: decomposition transitions
+	StateDecomposing: {
+		StateAwaitingApproval: true, // decomposition complete, awaiting user approval
+		StateFailed:           true, // decomposition failed
+	},
+	StateAwaitingApproval: {
+		StateQueued: true, // user approved — children enqueued, parent enters running
+		StateFailed: true, // user rejected decomposition
+	},
+	StateBlocked: {
+		StateQueued:  true, // blocker resolved, back to queued
+		StateFailed:  true, // timed out or manually failed
+	},
 }
 
 // mainStates lists the 8 main states in execution order.
@@ -107,11 +127,19 @@ var exceptionStates = []string{
 	StateReviewPending,
 }
 
-// AllStates returns all 12 state names.
+// decompositionStates lists the Phase 2 decomposition lifecycle states.
+var decompositionStates = []string{
+	StateDecomposing,
+	StateAwaitingApproval,
+	StateBlocked,
+}
+
+// AllStates returns all state names.
 func AllStates() []string {
-	states := make([]string, 0, 12)
+	states := make([]string, 0, 17)
 	states = append(states, mainStates...)
 	states = append(states, exceptionStates...)
+	states = append(states, decompositionStates...)
 	return states
 }
 

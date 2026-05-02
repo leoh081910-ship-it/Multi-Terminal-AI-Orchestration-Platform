@@ -198,6 +198,104 @@ func (_c *TaskCreate) SetCardJSON(v string) *TaskCreate {
 	return _c
 }
 
+// SetParentID sets the "parent_id" field.
+func (_c *TaskCreate) SetParentID(v string) *TaskCreate {
+	_c.mutation.SetParentID(v)
+	return _c
+}
+
+// SetNillableParentID sets the "parent_id" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableParentID(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetParentID(*v)
+	}
+	return _c
+}
+
+// SetRootID sets the "root_id" field.
+func (_c *TaskCreate) SetRootID(v string) *TaskCreate {
+	_c.mutation.SetRootID(v)
+	return _c
+}
+
+// SetNillableRootID sets the "root_id" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableRootID(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetRootID(*v)
+	}
+	return _c
+}
+
+// SetDepth sets the "depth" field.
+func (_c *TaskCreate) SetDepth(v int) *TaskCreate {
+	_c.mutation.SetDepth(v)
+	return _c
+}
+
+// SetNillableDepth sets the "depth" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableDepth(v *int) *TaskCreate {
+	if v != nil {
+		_c.SetDepth(*v)
+	}
+	return _c
+}
+
+// SetDecompositionStatus sets the "decomposition_status" field.
+func (_c *TaskCreate) SetDecompositionStatus(v string) *TaskCreate {
+	_c.mutation.SetDecompositionStatus(v)
+	return _c
+}
+
+// SetNillableDecompositionStatus sets the "decomposition_status" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableDecompositionStatus(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetDecompositionStatus(*v)
+	}
+	return _c
+}
+
+// SetOrgID sets the "org_id" field.
+func (_c *TaskCreate) SetOrgID(v string) *TaskCreate {
+	_c.mutation.SetOrgID(v)
+	return _c
+}
+
+// SetNillableOrgID sets the "org_id" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableOrgID(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetOrgID(*v)
+	}
+	return _c
+}
+
+// SetAssignedAgentID sets the "assigned_agent_id" field.
+func (_c *TaskCreate) SetAssignedAgentID(v string) *TaskCreate {
+	_c.mutation.SetAssignedAgentID(v)
+	return _c
+}
+
+// SetNillableAssignedAgentID sets the "assigned_agent_id" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableAssignedAgentID(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetAssignedAgentID(*v)
+	}
+	return _c
+}
+
+// SetAssignedRoleID sets the "assigned_role_id" field.
+func (_c *TaskCreate) SetAssignedRoleID(v string) *TaskCreate {
+	_c.mutation.SetAssignedRoleID(v)
+	return _c
+}
+
+// SetNillableAssignedRoleID sets the "assigned_role_id" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableAssignedRoleID(v *string) *TaskCreate {
+	if v != nil {
+		_c.SetAssignedRoleID(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *TaskCreate) SetID(v string) *TaskCreate {
 	_c.mutation.SetID(v)
@@ -267,6 +365,14 @@ func (_c *TaskCreate) defaults() {
 		v := task.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.Depth(); !ok {
+		v := task.DefaultDepth
+		_c.mutation.SetDepth(v)
+	}
+	if _, ok := _c.mutation.DecompositionStatus(); !ok {
+		v := task.DefaultDecompositionStatus
+		_c.mutation.SetDecompositionStatus(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -303,6 +409,12 @@ func (_c *TaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.CardJSON(); !ok {
 		return &ValidationError{Name: "card_json", err: errors.New(`ent: missing required field "Task.card_json"`)}
+	}
+	if _, ok := _c.mutation.Depth(); !ok {
+		return &ValidationError{Name: "depth", err: errors.New(`ent: missing required field "Task.depth"`)}
+	}
+	if _, ok := _c.mutation.DecompositionStatus(); !ok {
+		return &ValidationError{Name: "decomposition_status", err: errors.New(`ent: missing required field "Task.decomposition_status"`)}
 	}
 	return nil
 }
@@ -398,6 +510,34 @@ func (_c *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CardJSON(); ok {
 		_spec.SetField(task.FieldCardJSON, field.TypeString, value)
 		_node.CardJSON = value
+	}
+	if value, ok := _c.mutation.ParentID(); ok {
+		_spec.SetField(task.FieldParentID, field.TypeString, value)
+		_node.ParentID = value
+	}
+	if value, ok := _c.mutation.RootID(); ok {
+		_spec.SetField(task.FieldRootID, field.TypeString, value)
+		_node.RootID = value
+	}
+	if value, ok := _c.mutation.Depth(); ok {
+		_spec.SetField(task.FieldDepth, field.TypeInt, value)
+		_node.Depth = value
+	}
+	if value, ok := _c.mutation.DecompositionStatus(); ok {
+		_spec.SetField(task.FieldDecompositionStatus, field.TypeString, value)
+		_node.DecompositionStatus = value
+	}
+	if value, ok := _c.mutation.OrgID(); ok {
+		_spec.SetField(task.FieldOrgID, field.TypeString, value)
+		_node.OrgID = value
+	}
+	if value, ok := _c.mutation.AssignedAgentID(); ok {
+		_spec.SetField(task.FieldAssignedAgentID, field.TypeString, value)
+		_node.AssignedAgentID = value
+	}
+	if value, ok := _c.mutation.AssignedRoleID(); ok {
+		_spec.SetField(task.FieldAssignedRoleID, field.TypeString, value)
+		_node.AssignedRoleID = value
 	}
 	return _node, _spec
 }

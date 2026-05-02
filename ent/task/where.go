@@ -139,6 +139,41 @@ func CardJSON(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldCardJSON, v))
 }
 
+// ParentID applies equality check predicate on the "parent_id" field. It's identical to ParentIDEQ.
+func ParentID(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldParentID, v))
+}
+
+// RootID applies equality check predicate on the "root_id" field. It's identical to RootIDEQ.
+func RootID(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldRootID, v))
+}
+
+// Depth applies equality check predicate on the "depth" field. It's identical to DepthEQ.
+func Depth(v int) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldDepth, v))
+}
+
+// DecompositionStatus applies equality check predicate on the "decomposition_status" field. It's identical to DecompositionStatusEQ.
+func DecompositionStatus(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldDecompositionStatus, v))
+}
+
+// OrgID applies equality check predicate on the "org_id" field. It's identical to OrgIDEQ.
+func OrgID(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldOrgID, v))
+}
+
+// AssignedAgentID applies equality check predicate on the "assigned_agent_id" field. It's identical to AssignedAgentIDEQ.
+func AssignedAgentID(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldAssignedAgentID, v))
+}
+
+// AssignedRoleID applies equality check predicate on the "assigned_role_id" field. It's identical to AssignedRoleIDEQ.
+func AssignedRoleID(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldAssignedRoleID, v))
+}
+
 // ProjectIDEQ applies the EQ predicate on the "project_id" field.
 func ProjectIDEQ(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldProjectID, v))
@@ -977,6 +1012,486 @@ func CardJSONEqualFold(v string) predicate.Task {
 // CardJSONContainsFold applies the ContainsFold predicate on the "card_json" field.
 func CardJSONContainsFold(v string) predicate.Task {
 	return predicate.Task(sql.FieldContainsFold(FieldCardJSON, v))
+}
+
+// ParentIDEQ applies the EQ predicate on the "parent_id" field.
+func ParentIDEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldParentID, v))
+}
+
+// ParentIDNEQ applies the NEQ predicate on the "parent_id" field.
+func ParentIDNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldParentID, v))
+}
+
+// ParentIDIn applies the In predicate on the "parent_id" field.
+func ParentIDIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldParentID, vs...))
+}
+
+// ParentIDNotIn applies the NotIn predicate on the "parent_id" field.
+func ParentIDNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldParentID, vs...))
+}
+
+// ParentIDGT applies the GT predicate on the "parent_id" field.
+func ParentIDGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldParentID, v))
+}
+
+// ParentIDGTE applies the GTE predicate on the "parent_id" field.
+func ParentIDGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldParentID, v))
+}
+
+// ParentIDLT applies the LT predicate on the "parent_id" field.
+func ParentIDLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldParentID, v))
+}
+
+// ParentIDLTE applies the LTE predicate on the "parent_id" field.
+func ParentIDLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldParentID, v))
+}
+
+// ParentIDContains applies the Contains predicate on the "parent_id" field.
+func ParentIDContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldParentID, v))
+}
+
+// ParentIDHasPrefix applies the HasPrefix predicate on the "parent_id" field.
+func ParentIDHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldParentID, v))
+}
+
+// ParentIDHasSuffix applies the HasSuffix predicate on the "parent_id" field.
+func ParentIDHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldParentID, v))
+}
+
+// ParentIDIsNil applies the IsNil predicate on the "parent_id" field.
+func ParentIDIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldParentID))
+}
+
+// ParentIDNotNil applies the NotNil predicate on the "parent_id" field.
+func ParentIDNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldParentID))
+}
+
+// ParentIDEqualFold applies the EqualFold predicate on the "parent_id" field.
+func ParentIDEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldParentID, v))
+}
+
+// ParentIDContainsFold applies the ContainsFold predicate on the "parent_id" field.
+func ParentIDContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldParentID, v))
+}
+
+// RootIDEQ applies the EQ predicate on the "root_id" field.
+func RootIDEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldRootID, v))
+}
+
+// RootIDNEQ applies the NEQ predicate on the "root_id" field.
+func RootIDNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldRootID, v))
+}
+
+// RootIDIn applies the In predicate on the "root_id" field.
+func RootIDIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldRootID, vs...))
+}
+
+// RootIDNotIn applies the NotIn predicate on the "root_id" field.
+func RootIDNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldRootID, vs...))
+}
+
+// RootIDGT applies the GT predicate on the "root_id" field.
+func RootIDGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldRootID, v))
+}
+
+// RootIDGTE applies the GTE predicate on the "root_id" field.
+func RootIDGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldRootID, v))
+}
+
+// RootIDLT applies the LT predicate on the "root_id" field.
+func RootIDLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldRootID, v))
+}
+
+// RootIDLTE applies the LTE predicate on the "root_id" field.
+func RootIDLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldRootID, v))
+}
+
+// RootIDContains applies the Contains predicate on the "root_id" field.
+func RootIDContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldRootID, v))
+}
+
+// RootIDHasPrefix applies the HasPrefix predicate on the "root_id" field.
+func RootIDHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldRootID, v))
+}
+
+// RootIDHasSuffix applies the HasSuffix predicate on the "root_id" field.
+func RootIDHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldRootID, v))
+}
+
+// RootIDIsNil applies the IsNil predicate on the "root_id" field.
+func RootIDIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldRootID))
+}
+
+// RootIDNotNil applies the NotNil predicate on the "root_id" field.
+func RootIDNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldRootID))
+}
+
+// RootIDEqualFold applies the EqualFold predicate on the "root_id" field.
+func RootIDEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldRootID, v))
+}
+
+// RootIDContainsFold applies the ContainsFold predicate on the "root_id" field.
+func RootIDContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldRootID, v))
+}
+
+// DepthEQ applies the EQ predicate on the "depth" field.
+func DepthEQ(v int) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldDepth, v))
+}
+
+// DepthNEQ applies the NEQ predicate on the "depth" field.
+func DepthNEQ(v int) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldDepth, v))
+}
+
+// DepthIn applies the In predicate on the "depth" field.
+func DepthIn(vs ...int) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldDepth, vs...))
+}
+
+// DepthNotIn applies the NotIn predicate on the "depth" field.
+func DepthNotIn(vs ...int) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldDepth, vs...))
+}
+
+// DepthGT applies the GT predicate on the "depth" field.
+func DepthGT(v int) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldDepth, v))
+}
+
+// DepthGTE applies the GTE predicate on the "depth" field.
+func DepthGTE(v int) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldDepth, v))
+}
+
+// DepthLT applies the LT predicate on the "depth" field.
+func DepthLT(v int) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldDepth, v))
+}
+
+// DepthLTE applies the LTE predicate on the "depth" field.
+func DepthLTE(v int) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldDepth, v))
+}
+
+// DecompositionStatusEQ applies the EQ predicate on the "decomposition_status" field.
+func DecompositionStatusEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusNEQ applies the NEQ predicate on the "decomposition_status" field.
+func DecompositionStatusNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusIn applies the In predicate on the "decomposition_status" field.
+func DecompositionStatusIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldDecompositionStatus, vs...))
+}
+
+// DecompositionStatusNotIn applies the NotIn predicate on the "decomposition_status" field.
+func DecompositionStatusNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldDecompositionStatus, vs...))
+}
+
+// DecompositionStatusGT applies the GT predicate on the "decomposition_status" field.
+func DecompositionStatusGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusGTE applies the GTE predicate on the "decomposition_status" field.
+func DecompositionStatusGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusLT applies the LT predicate on the "decomposition_status" field.
+func DecompositionStatusLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusLTE applies the LTE predicate on the "decomposition_status" field.
+func DecompositionStatusLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusContains applies the Contains predicate on the "decomposition_status" field.
+func DecompositionStatusContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusHasPrefix applies the HasPrefix predicate on the "decomposition_status" field.
+func DecompositionStatusHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusHasSuffix applies the HasSuffix predicate on the "decomposition_status" field.
+func DecompositionStatusHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusEqualFold applies the EqualFold predicate on the "decomposition_status" field.
+func DecompositionStatusEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldDecompositionStatus, v))
+}
+
+// DecompositionStatusContainsFold applies the ContainsFold predicate on the "decomposition_status" field.
+func DecompositionStatusContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldDecompositionStatus, v))
+}
+
+// OrgIDEQ applies the EQ predicate on the "org_id" field.
+func OrgIDEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldOrgID, v))
+}
+
+// OrgIDNEQ applies the NEQ predicate on the "org_id" field.
+func OrgIDNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldOrgID, v))
+}
+
+// OrgIDIn applies the In predicate on the "org_id" field.
+func OrgIDIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldOrgID, vs...))
+}
+
+// OrgIDNotIn applies the NotIn predicate on the "org_id" field.
+func OrgIDNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldOrgID, vs...))
+}
+
+// OrgIDGT applies the GT predicate on the "org_id" field.
+func OrgIDGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldOrgID, v))
+}
+
+// OrgIDGTE applies the GTE predicate on the "org_id" field.
+func OrgIDGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldOrgID, v))
+}
+
+// OrgIDLT applies the LT predicate on the "org_id" field.
+func OrgIDLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldOrgID, v))
+}
+
+// OrgIDLTE applies the LTE predicate on the "org_id" field.
+func OrgIDLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldOrgID, v))
+}
+
+// OrgIDContains applies the Contains predicate on the "org_id" field.
+func OrgIDContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldOrgID, v))
+}
+
+// OrgIDHasPrefix applies the HasPrefix predicate on the "org_id" field.
+func OrgIDHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldOrgID, v))
+}
+
+// OrgIDHasSuffix applies the HasSuffix predicate on the "org_id" field.
+func OrgIDHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldOrgID, v))
+}
+
+// OrgIDIsNil applies the IsNil predicate on the "org_id" field.
+func OrgIDIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldOrgID))
+}
+
+// OrgIDNotNil applies the NotNil predicate on the "org_id" field.
+func OrgIDNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldOrgID))
+}
+
+// OrgIDEqualFold applies the EqualFold predicate on the "org_id" field.
+func OrgIDEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldOrgID, v))
+}
+
+// OrgIDContainsFold applies the ContainsFold predicate on the "org_id" field.
+func OrgIDContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldOrgID, v))
+}
+
+// AssignedAgentIDEQ applies the EQ predicate on the "assigned_agent_id" field.
+func AssignedAgentIDEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDNEQ applies the NEQ predicate on the "assigned_agent_id" field.
+func AssignedAgentIDNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDIn applies the In predicate on the "assigned_agent_id" field.
+func AssignedAgentIDIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldAssignedAgentID, vs...))
+}
+
+// AssignedAgentIDNotIn applies the NotIn predicate on the "assigned_agent_id" field.
+func AssignedAgentIDNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldAssignedAgentID, vs...))
+}
+
+// AssignedAgentIDGT applies the GT predicate on the "assigned_agent_id" field.
+func AssignedAgentIDGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDGTE applies the GTE predicate on the "assigned_agent_id" field.
+func AssignedAgentIDGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDLT applies the LT predicate on the "assigned_agent_id" field.
+func AssignedAgentIDLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDLTE applies the LTE predicate on the "assigned_agent_id" field.
+func AssignedAgentIDLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDContains applies the Contains predicate on the "assigned_agent_id" field.
+func AssignedAgentIDContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDHasPrefix applies the HasPrefix predicate on the "assigned_agent_id" field.
+func AssignedAgentIDHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDHasSuffix applies the HasSuffix predicate on the "assigned_agent_id" field.
+func AssignedAgentIDHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDIsNil applies the IsNil predicate on the "assigned_agent_id" field.
+func AssignedAgentIDIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldAssignedAgentID))
+}
+
+// AssignedAgentIDNotNil applies the NotNil predicate on the "assigned_agent_id" field.
+func AssignedAgentIDNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldAssignedAgentID))
+}
+
+// AssignedAgentIDEqualFold applies the EqualFold predicate on the "assigned_agent_id" field.
+func AssignedAgentIDEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldAssignedAgentID, v))
+}
+
+// AssignedAgentIDContainsFold applies the ContainsFold predicate on the "assigned_agent_id" field.
+func AssignedAgentIDContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldAssignedAgentID, v))
+}
+
+// AssignedRoleIDEQ applies the EQ predicate on the "assigned_role_id" field.
+func AssignedRoleIDEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDNEQ applies the NEQ predicate on the "assigned_role_id" field.
+func AssignedRoleIDNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDIn applies the In predicate on the "assigned_role_id" field.
+func AssignedRoleIDIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldAssignedRoleID, vs...))
+}
+
+// AssignedRoleIDNotIn applies the NotIn predicate on the "assigned_role_id" field.
+func AssignedRoleIDNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldAssignedRoleID, vs...))
+}
+
+// AssignedRoleIDGT applies the GT predicate on the "assigned_role_id" field.
+func AssignedRoleIDGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDGTE applies the GTE predicate on the "assigned_role_id" field.
+func AssignedRoleIDGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDLT applies the LT predicate on the "assigned_role_id" field.
+func AssignedRoleIDLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDLTE applies the LTE predicate on the "assigned_role_id" field.
+func AssignedRoleIDLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDContains applies the Contains predicate on the "assigned_role_id" field.
+func AssignedRoleIDContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDHasPrefix applies the HasPrefix predicate on the "assigned_role_id" field.
+func AssignedRoleIDHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDHasSuffix applies the HasSuffix predicate on the "assigned_role_id" field.
+func AssignedRoleIDHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDIsNil applies the IsNil predicate on the "assigned_role_id" field.
+func AssignedRoleIDIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldAssignedRoleID))
+}
+
+// AssignedRoleIDNotNil applies the NotNil predicate on the "assigned_role_id" field.
+func AssignedRoleIDNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldAssignedRoleID))
+}
+
+// AssignedRoleIDEqualFold applies the EqualFold predicate on the "assigned_role_id" field.
+func AssignedRoleIDEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldAssignedRoleID, v))
+}
+
+// AssignedRoleIDContainsFold applies the ContainsFold predicate on the "assigned_role_id" field.
+func AssignedRoleIDContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldAssignedRoleID, v))
 }
 
 // And groups predicates with the AND operator between them.

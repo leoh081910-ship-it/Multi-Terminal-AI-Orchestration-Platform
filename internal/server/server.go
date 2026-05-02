@@ -18,6 +18,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/knowledge"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/rs/zerolog"
 )
@@ -31,10 +34,12 @@ type APIResponse struct {
 
 // Server provides the HTTP API server.
 type Server struct {
-	repo     *store.Repository
-	logger   zerolog.Logger
-	router   *chi.Mux
-	projects *compatProjectRegistry
+	repo         *store.Repository
+	logger       zerolog.Logger
+	router       *chi.Mux
+	orgSvc       *org.Service
+	knowledgeSvc *knowledge.Service
+	projects     *compatProjectRegistry
 
 	projectsMu          sync.RWMutex
 	projectConfigStore  *ProjectConfigStore
@@ -50,15 +55,31 @@ type Server struct {
 	autoDispatcherActive  bool
 	ttlCleanupActive      bool
 	executionReaperActive bool
+
+	// Phase 4: real-time event system
+	eventBus *EventBus
+	wsHub    *WSHub
+
+	// Phase 5: intelligent routing
+	taskRouter *router.Router
 }
 
 // New creates a new Server instance.
 func New(repo *store.Repository, logger zerolog.Logger) *Server {
+	eventBus := NewEventBus()
+	wsHub := NewWSHub(logger)
+	wsHub.ConnectEventBus(eventBus)
+	go wsHub.Run()
+
 	s := &Server{
-		repo:       repo,
-		logger:     logger,
-		router:     chi.NewRouter(),
-		webDistDir: filepath.FromSlash("web/dist"),
+		repo:         repo,
+		logger:       logger,
+		router:       chi.NewRouter(),
+		orgSvc:       org.NewService(repo.Client()),
+		knowledgeSvc: knowledge.NewService(repo.Client()),
+		eventBus:     eventBus,
+		wsHub:        wsHub,
+		webDistDir:   filepath.FromSlash("web/dist"),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -111,6 +132,18 @@ func (s *Server) setupRoutes() {
 
 			// PR-3: Recovery endpoint for stuck tasks
 			r.Post("/recovery/stuck-tasks", s.handleRecoverStuckTasks)
+
+			// Organization management
+			s.registerOrgRoutes(r)
+
+			// Goal decomposition
+			s.registerGoalRoutes(r)
+
+			// Knowledge space
+			s.registerKnowledgeRoutes(r)
+
+			// WebSocket
+			s.registerWSRoutes(r)
 		})
 
 		// Task endpoints
@@ -642,6 +675,11 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 // --- PRD-DA-001 Coordination Worker Management ---
+
+// SetTaskRouter sets the intelligent task router.
+func (s *Server) SetTaskRouter(r *router.Router) {
+	s.taskRouter = r
+}
 
 // SetCoordinationWorkers sets the coordination background workers.
 func (s *Server) SetCoordinationWorkers(orchestrator *FailureOrchestrator, retryW *RetryWorker, reviewW *ReviewWorker) {

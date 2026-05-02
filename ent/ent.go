@@ -12,8 +12,17 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/document"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/event"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/knowledgespace"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/message"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/organization"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 )
 
@@ -75,9 +84,18 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			event.Table: event.ValidColumn,
-			task.Table:  task.ValidColumn,
-			wave.Table:  wave.ValidColumn,
+			agent.Table:          agent.ValidColumn,
+			contextentry.Table:   contextentry.ValidColumn,
+			department.Table:     department.ValidColumn,
+			document.Table:       document.ValidColumn,
+			event.Table:          event.ValidColumn,
+			knowledgespace.Table: knowledgespace.ValidColumn,
+			message.Table:        message.ValidColumn,
+			organization.Table:   organization.ValidColumn,
+			role.Table:           role.ValidColumn,
+			task.Table:           task.ValidColumn,
+			team.Table:           team.ValidColumn,
+			wave.Table:           wave.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

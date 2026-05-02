@@ -30,6 +30,14 @@ type TaskCard struct {
 	ArtifactPath       string `json:"artifact_path,omitempty"`
 	LastErrorReason    string `json:"last_error_reason,omitempty"`
 	CardJSON           string `json:"card_json"`
+	// Phase 2: hierarchy fields
+	ParentID           string `json:"parent_id,omitempty"`
+	RootID             string `json:"root_id,omitempty"`
+	Depth              int    `json:"depth"`
+	DecompositionStatus string `json:"decomposition_status,omitempty"`
+	OrgID              string `json:"org_id,omitempty"`
+	AssignedAgentID    string `json:"assigned_agent_id,omitempty"`
+	AssignedRoleID     string `json:"assigned_role_id,omitempty"`
 }
 
 // TaskView is the API-facing task projection built from card_json plus runtime fields.
@@ -50,6 +58,14 @@ type TaskView struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 	TerminalAt         time.Time `json:"terminal_at,omitempty"`
 	CardJSON           string    `json:"card_json"`
+	// Phase 2: hierarchy fields
+	ParentID            string `json:"parent_id,omitempty"`
+	RootID              string `json:"root_id,omitempty"`
+	Depth               int    `json:"depth"`
+	DecompositionStatus string `json:"decomposition_status,omitempty"`
+	OrgID               string `json:"org_id,omitempty"`
+	AssignedAgentID     string `json:"assigned_agent_id,omitempty"`
+	AssignedRoleID      string `json:"assigned_role_id,omitempty"`
 }
 
 type taskCardJSONPayload struct {
@@ -65,6 +81,14 @@ type taskCardJSONPayload struct {
 	WorkspacePath      *string `json:"workspace_path"`
 	ArtifactPath       *string `json:"artifact_path"`
 	LastErrorReason    *string `json:"last_error_reason"`
+	// Phase 2: hierarchy fields
+	ParentID           *string `json:"parent_id"`
+	RootID             *string `json:"root_id"`
+	Depth              *int    `json:"depth"`
+	DecompositionStatus *string `json:"decomposition_status"`
+	OrgID              *string `json:"org_id"`
+	AssignedAgentID    *string `json:"assigned_agent_id"`
+	AssignedRoleID     *string `json:"assigned_role_id"`
 }
 
 // EventData represents the event structure for logging.
@@ -95,6 +119,11 @@ func NewRepository(client *ent.Client, logger *zerolog.Logger) *Repository {
 		client: client,
 		logger: logger,
 	}
+}
+
+// Client returns the underlying ent client.
+func (r *Repository) Client() *ent.Client {
+	return r.client
 }
 
 // WithTx executes the given function within a transaction.
@@ -139,7 +168,7 @@ func (r *Repository) CreateTask(ctx context.Context, card *TaskCard) (string, er
 	}
 
 	now := time.Now().UTC()
-	t, err := r.client.Task.Create().
+	create := r.client.Task.Create().
 		SetID(derived.ID).
 		SetProjectID(derived.ProjectID).
 		SetDispatchRef(derived.DispatchRef).
@@ -155,7 +184,24 @@ func (r *Repository) CreateTask(ctx context.Context, card *TaskCard) (string, er
 		SetCreatedAt(now).
 		SetUpdatedAt(now).
 		SetCardJSON(derived.CardJSON).
-		Save(ctx)
+		SetDepth(derived.Depth).
+		SetDecompositionStatus(derived.DecompositionStatus)
+	if derived.ParentID != "" {
+		create.SetParentID(derived.ParentID)
+	}
+	if derived.RootID != "" {
+		create.SetRootID(derived.RootID)
+	}
+	if derived.OrgID != "" {
+		create.SetOrgID(derived.OrgID)
+	}
+	if derived.AssignedAgentID != "" {
+		create.SetAssignedAgentID(derived.AssignedAgentID)
+	}
+	if derived.AssignedRoleID != "" {
+		create.SetAssignedRoleID(derived.AssignedRoleID)
+	}
+	t, err := create.Save(ctx)
 
 	if err != nil {
 		return "", fmt.Errorf("failed to create task: %w", err)
@@ -362,6 +408,53 @@ func (r *Repository) UpdateTask(ctx context.Context, taskID string, updates *Tas
 		return nil
 	}
 
+// CheckAndPromoteParent checks if all children of a parent task are in a terminal state,
+// and if so, promotes the parent to verified. Called after a child reaches a terminal state.
+func (r *Repository) CheckAndPromoteParent(ctx context.Context, childID string) error {
+	child, err := r.client.Task.Get(ctx, childID)
+	if err != nil {
+		return fmt.Errorf("get child task: %w", err)
+	}
+	if child.ParentID == "" {
+		return nil // no parent, nothing to do
+	}
+
+	// Check if all siblings are done
+	children, err := r.client.Task.Query().
+		Where(task.ParentID(child.ParentID)).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("query siblings: %w", err)
+	}
+
+	allDone := true
+	for _, c := range children {
+		if c.State != "done" {
+			allDone = false
+			break
+		}
+	}
+
+	if !allDone {
+		return nil
+	}
+
+	// All children complete — promote parent from running to verified
+	now := time.Now().UTC()
+	_, err = r.client.Task.Update().
+		Where(task.ID(child.ParentID), task.State("running")).
+		SetState("verified").
+		SetDecompositionStatus("completed").
+		SetUpdatedAt(now).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("promote parent: %w", err)
+	}
+
+	r.logger.Info().Str("parent_id", child.ParentID).Msg("parent task auto-promoted to verified")
+	return nil
+}
+
 	// CleanupTaskResources removes persisted workspace and artifact directories for a task,
 // then clears their paths from both structured columns and card_json.
 func (r *Repository) CleanupTaskResources(ctx context.Context, taskID string) (bool, error) {
@@ -450,6 +543,13 @@ func BuildTaskView(t *ent.Task) (*TaskView, error) {
 		UpdatedAt:          t.UpdatedAt,
 		TerminalAt:         t.TerminalAt,
 		CardJSON:           t.CardJSON,
+		ParentID:            t.ParentID,
+		RootID:              t.RootID,
+		Depth:               t.Depth,
+		DecompositionStatus: t.DecompositionStatus,
+		OrgID:               t.OrgID,
+		AssignedAgentID:     t.AssignedAgentID,
+		AssignedRoleID:      t.AssignedRoleID,
 	}
 
 	return view, err
@@ -615,6 +715,14 @@ func deriveTaskCard(input *TaskCard, existing *ent.Task) (*TaskCard, error) {
 		ArtifactPath:       chooseString(payload.ArtifactPath, existingString(existing, func(t *ent.Task) string { return t.ArtifactPath })),
 		LastErrorReason:    chooseString(payload.LastErrorReason, existingString(existing, func(t *ent.Task) string { return t.LastErrorReason })),
 		CardJSON:           input.CardJSON,
+		// Phase 2: hierarchy
+		ParentID:            chooseString(payload.ParentID, existingString(existing, func(t *ent.Task) string { return t.ParentID })),
+		RootID:              chooseString(payload.RootID, existingString(existing, func(t *ent.Task) string { return t.RootID })),
+		Depth:               chooseInt(payload.Depth, existingInt(existing, func(t *ent.Task) int { return t.Depth })),
+		DecompositionStatus: chooseString(payload.DecompositionStatus, existingString(existing, func(t *ent.Task) string { return t.DecompositionStatus }), "none"),
+		OrgID:               chooseString(payload.OrgID, existingString(existing, func(t *ent.Task) string { return t.OrgID })),
+		AssignedAgentID:     chooseString(payload.AssignedAgentID, existingString(existing, func(t *ent.Task) string { return t.AssignedAgentID })),
+		AssignedRoleID:      chooseString(payload.AssignedRoleID, existingString(existing, func(t *ent.Task) string { return t.AssignedRoleID })),
 	}
 
 	if derived.ID == "" {

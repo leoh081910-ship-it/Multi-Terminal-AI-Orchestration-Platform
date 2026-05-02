@@ -6,11 +6,38 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Agent is the predicate function for agent builders.
+type Agent func(*sql.Selector)
+
+// ContextEntry is the predicate function for contextentry builders.
+type ContextEntry func(*sql.Selector)
+
+// Department is the predicate function for department builders.
+type Department func(*sql.Selector)
+
+// Document is the predicate function for document builders.
+type Document func(*sql.Selector)
+
 // Event is the predicate function for event builders.
 type Event func(*sql.Selector)
 
+// KnowledgeSpace is the predicate function for knowledgespace builders.
+type KnowledgeSpace func(*sql.Selector)
+
+// Message is the predicate function for message builders.
+type Message func(*sql.Selector)
+
+// Organization is the predicate function for organization builders.
+type Organization func(*sql.Selector)
+
+// Role is the predicate function for role builders.
+type Role func(*sql.Selector)
+
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
+
+// Team is the predicate function for team builders.
+type Team func(*sql.Selector)
 
 // Wave is the predicate function for wave builders.
 type Wave func(*sql.Selector)

@@ -1,7 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet } from 'react-router-dom';
-import { FolderKanban, Kanban, Plus, Terminal } from 'lucide-react';
+import { FolderKanban, Kanban, Plus, Terminal, GanttChartSquare, GitBranch, Users, LayoutDashboard, Building2, BookOpen } from 'lucide-react';
 import { projectsApi } from '../api/projectsApi';
 import { useProject } from '../hooks/useProject';
 import type { CreateProjectInput } from '../types/project';
@@ -31,6 +31,12 @@ const Layout: React.FC = () => {
   const navItems = [
     { to: '/', icon: <Terminal size={20} />, label: '控制中心' },
     { to: '/board', icon: <Kanban size={20} />, label: '调度看板' },
+    { to: '/timeline', icon: <GanttChartSquare size={20} />, label: '时间线' },
+    { to: '/goals', icon: <GitBranch size={20} />, label: '目标管理' },
+    { to: '/agents', icon: <Users size={20} />, label: 'Agent 工作台' },
+    { to: '/swimlane', icon: <LayoutDashboard size={20} />, label: '泳道看板' },
+    { to: '/org', icon: <Building2 size={20} />, label: '组织架构' },
+    { to: '/knowledge', icon: <BookOpen size={20} />, label: '知识空间' },
   ];
 
   const createProjectMutation = useMutation({

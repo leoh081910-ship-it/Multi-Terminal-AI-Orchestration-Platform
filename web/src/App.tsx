@@ -4,6 +4,12 @@ import Layout from './components/Layout';
 import { ProjectProvider } from './context/ProjectContext';
 import OrchestratorHome from './pages/OrchestratorHome';
 import SchedulerBoard from './pages/SchedulerBoard';
+import TimelinePage from './pages/TimelinePage';
+import GoalPage from './pages/GoalPage';
+import AgentWorkbenchPage from './pages/AgentWorkbenchPage';
+import SwimLanePage from './pages/SwimLanePage';
+import OrganizationPage from './pages/OrganizationPage';
+import KnowledgeSpacePage from './pages/KnowledgeSpacePage';
 import './styles/global.css';
 
 const queryClient = new QueryClient({
@@ -24,6 +30,12 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<OrchestratorHome />} />
               <Route path="board" element={<SchedulerBoard />} />
+              <Route path="timeline" element={<TimelinePage />} />
+              <Route path="goals" element={<GoalPage />} />
+              <Route path="agents" element={<AgentWorkbenchPage />} />
+              <Route path="swimlane" element={<SwimLanePage />} />
+              <Route path="org" element={<OrganizationPage />} />
+              <Route path="knowledge" element={<KnowledgeSpacePage />} />
               <Route path="*" element={<OrchestratorHome />} />
             </Route>
           </Routes>

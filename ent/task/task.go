@@ -43,6 +43,20 @@ const (
 	FieldTerminalAt = "terminal_at"
 	// FieldCardJSON holds the string denoting the card_json field in the database.
 	FieldCardJSON = "card_json"
+	// FieldParentID holds the string denoting the parent_id field in the database.
+	FieldParentID = "parent_id"
+	// FieldRootID holds the string denoting the root_id field in the database.
+	FieldRootID = "root_id"
+	// FieldDepth holds the string denoting the depth field in the database.
+	FieldDepth = "depth"
+	// FieldDecompositionStatus holds the string denoting the decomposition_status field in the database.
+	FieldDecompositionStatus = "decomposition_status"
+	// FieldOrgID holds the string denoting the org_id field in the database.
+	FieldOrgID = "org_id"
+	// FieldAssignedAgentID holds the string denoting the assigned_agent_id field in the database.
+	FieldAssignedAgentID = "assigned_agent_id"
+	// FieldAssignedRoleID holds the string denoting the assigned_role_id field in the database.
+	FieldAssignedRoleID = "assigned_role_id"
 	// Table holds the table name of the task in the database.
 	Table = "tasks"
 )
@@ -65,6 +79,13 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldTerminalAt,
 	FieldCardJSON,
+	FieldParentID,
+	FieldRootID,
+	FieldDepth,
+	FieldDecompositionStatus,
+	FieldOrgID,
+	FieldAssignedAgentID,
+	FieldAssignedRoleID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -92,6 +113,10 @@ var (
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
 	DefaultUpdatedAt func() time.Time
+	// DefaultDepth holds the default value on creation for the "depth" field.
+	DefaultDepth int
+	// DefaultDecompositionStatus holds the default value on creation for the "decomposition_status" field.
+	DefaultDecompositionStatus string
 )
 
 // OrderOption defines the ordering options for the Task queries.
@@ -175,4 +200,39 @@ func ByTerminalAt(opts ...sql.OrderTermOption) OrderOption {
 // ByCardJSON orders the results by the card_json field.
 func ByCardJSON(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCardJSON, opts...).ToFunc()
+}
+
+// ByParentID orders the results by the parent_id field.
+func ByParentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldParentID, opts...).ToFunc()
+}
+
+// ByRootID orders the results by the root_id field.
+func ByRootID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRootID, opts...).ToFunc()
+}
+
+// ByDepth orders the results by the depth field.
+func ByDepth(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDepth, opts...).ToFunc()
+}
+
+// ByDecompositionStatus orders the results by the decomposition_status field.
+func ByDecompositionStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDecompositionStatus, opts...).ToFunc()
+}
+
+// ByOrgID orders the results by the org_id field.
+func ByOrgID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOrgID, opts...).ToFunc()
+}
+
+// ByAssignedAgentID orders the results by the assigned_agent_id field.
+func ByAssignedAgentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAssignedAgentID, opts...).ToFunc()
+}
+
+// ByAssignedRoleID orders the results by the assigned_role_id field.
+func ByAssignedRoleID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAssignedRoleID, opts...).ToFunc()
 }

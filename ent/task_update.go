@@ -290,6 +290,141 @@ func (_u *TaskUpdate) SetNillableCardJSON(v *string) *TaskUpdate {
 	return _u
 }
 
+// SetParentID sets the "parent_id" field.
+func (_u *TaskUpdate) SetParentID(v string) *TaskUpdate {
+	_u.mutation.SetParentID(v)
+	return _u
+}
+
+// SetNillableParentID sets the "parent_id" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableParentID(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetParentID(*v)
+	}
+	return _u
+}
+
+// ClearParentID clears the value of the "parent_id" field.
+func (_u *TaskUpdate) ClearParentID() *TaskUpdate {
+	_u.mutation.ClearParentID()
+	return _u
+}
+
+// SetRootID sets the "root_id" field.
+func (_u *TaskUpdate) SetRootID(v string) *TaskUpdate {
+	_u.mutation.SetRootID(v)
+	return _u
+}
+
+// SetNillableRootID sets the "root_id" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableRootID(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetRootID(*v)
+	}
+	return _u
+}
+
+// ClearRootID clears the value of the "root_id" field.
+func (_u *TaskUpdate) ClearRootID() *TaskUpdate {
+	_u.mutation.ClearRootID()
+	return _u
+}
+
+// SetDepth sets the "depth" field.
+func (_u *TaskUpdate) SetDepth(v int) *TaskUpdate {
+	_u.mutation.ResetDepth()
+	_u.mutation.SetDepth(v)
+	return _u
+}
+
+// SetNillableDepth sets the "depth" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableDepth(v *int) *TaskUpdate {
+	if v != nil {
+		_u.SetDepth(*v)
+	}
+	return _u
+}
+
+// AddDepth adds value to the "depth" field.
+func (_u *TaskUpdate) AddDepth(v int) *TaskUpdate {
+	_u.mutation.AddDepth(v)
+	return _u
+}
+
+// SetDecompositionStatus sets the "decomposition_status" field.
+func (_u *TaskUpdate) SetDecompositionStatus(v string) *TaskUpdate {
+	_u.mutation.SetDecompositionStatus(v)
+	return _u
+}
+
+// SetNillableDecompositionStatus sets the "decomposition_status" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableDecompositionStatus(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetDecompositionStatus(*v)
+	}
+	return _u
+}
+
+// SetOrgID sets the "org_id" field.
+func (_u *TaskUpdate) SetOrgID(v string) *TaskUpdate {
+	_u.mutation.SetOrgID(v)
+	return _u
+}
+
+// SetNillableOrgID sets the "org_id" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableOrgID(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetOrgID(*v)
+	}
+	return _u
+}
+
+// ClearOrgID clears the value of the "org_id" field.
+func (_u *TaskUpdate) ClearOrgID() *TaskUpdate {
+	_u.mutation.ClearOrgID()
+	return _u
+}
+
+// SetAssignedAgentID sets the "assigned_agent_id" field.
+func (_u *TaskUpdate) SetAssignedAgentID(v string) *TaskUpdate {
+	_u.mutation.SetAssignedAgentID(v)
+	return _u
+}
+
+// SetNillableAssignedAgentID sets the "assigned_agent_id" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableAssignedAgentID(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetAssignedAgentID(*v)
+	}
+	return _u
+}
+
+// ClearAssignedAgentID clears the value of the "assigned_agent_id" field.
+func (_u *TaskUpdate) ClearAssignedAgentID() *TaskUpdate {
+	_u.mutation.ClearAssignedAgentID()
+	return _u
+}
+
+// SetAssignedRoleID sets the "assigned_role_id" field.
+func (_u *TaskUpdate) SetAssignedRoleID(v string) *TaskUpdate {
+	_u.mutation.SetAssignedRoleID(v)
+	return _u
+}
+
+// SetNillableAssignedRoleID sets the "assigned_role_id" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableAssignedRoleID(v *string) *TaskUpdate {
+	if v != nil {
+		_u.SetAssignedRoleID(*v)
+	}
+	return _u
+}
+
+// ClearAssignedRoleID clears the value of the "assigned_role_id" field.
+func (_u *TaskUpdate) ClearAssignedRoleID() *TaskUpdate {
+	_u.mutation.ClearAssignedRoleID()
+	return _u
+}
+
 // Mutation returns the TaskMutation object of the builder.
 func (_u *TaskUpdate) Mutation() *TaskMutation {
 	return _u.mutation
@@ -399,6 +534,45 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.CardJSON(); ok {
 		_spec.SetField(task.FieldCardJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ParentID(); ok {
+		_spec.SetField(task.FieldParentID, field.TypeString, value)
+	}
+	if _u.mutation.ParentIDCleared() {
+		_spec.ClearField(task.FieldParentID, field.TypeString)
+	}
+	if value, ok := _u.mutation.RootID(); ok {
+		_spec.SetField(task.FieldRootID, field.TypeString, value)
+	}
+	if _u.mutation.RootIDCleared() {
+		_spec.ClearField(task.FieldRootID, field.TypeString)
+	}
+	if value, ok := _u.mutation.Depth(); ok {
+		_spec.SetField(task.FieldDepth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedDepth(); ok {
+		_spec.AddField(task.FieldDepth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.DecompositionStatus(); ok {
+		_spec.SetField(task.FieldDecompositionStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OrgID(); ok {
+		_spec.SetField(task.FieldOrgID, field.TypeString, value)
+	}
+	if _u.mutation.OrgIDCleared() {
+		_spec.ClearField(task.FieldOrgID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AssignedAgentID(); ok {
+		_spec.SetField(task.FieldAssignedAgentID, field.TypeString, value)
+	}
+	if _u.mutation.AssignedAgentIDCleared() {
+		_spec.ClearField(task.FieldAssignedAgentID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AssignedRoleID(); ok {
+		_spec.SetField(task.FieldAssignedRoleID, field.TypeString, value)
+	}
+	if _u.mutation.AssignedRoleIDCleared() {
+		_spec.ClearField(task.FieldAssignedRoleID, field.TypeString)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -682,6 +856,141 @@ func (_u *TaskUpdateOne) SetNillableCardJSON(v *string) *TaskUpdateOne {
 	return _u
 }
 
+// SetParentID sets the "parent_id" field.
+func (_u *TaskUpdateOne) SetParentID(v string) *TaskUpdateOne {
+	_u.mutation.SetParentID(v)
+	return _u
+}
+
+// SetNillableParentID sets the "parent_id" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableParentID(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetParentID(*v)
+	}
+	return _u
+}
+
+// ClearParentID clears the value of the "parent_id" field.
+func (_u *TaskUpdateOne) ClearParentID() *TaskUpdateOne {
+	_u.mutation.ClearParentID()
+	return _u
+}
+
+// SetRootID sets the "root_id" field.
+func (_u *TaskUpdateOne) SetRootID(v string) *TaskUpdateOne {
+	_u.mutation.SetRootID(v)
+	return _u
+}
+
+// SetNillableRootID sets the "root_id" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableRootID(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetRootID(*v)
+	}
+	return _u
+}
+
+// ClearRootID clears the value of the "root_id" field.
+func (_u *TaskUpdateOne) ClearRootID() *TaskUpdateOne {
+	_u.mutation.ClearRootID()
+	return _u
+}
+
+// SetDepth sets the "depth" field.
+func (_u *TaskUpdateOne) SetDepth(v int) *TaskUpdateOne {
+	_u.mutation.ResetDepth()
+	_u.mutation.SetDepth(v)
+	return _u
+}
+
+// SetNillableDepth sets the "depth" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableDepth(v *int) *TaskUpdateOne {
+	if v != nil {
+		_u.SetDepth(*v)
+	}
+	return _u
+}
+
+// AddDepth adds value to the "depth" field.
+func (_u *TaskUpdateOne) AddDepth(v int) *TaskUpdateOne {
+	_u.mutation.AddDepth(v)
+	return _u
+}
+
+// SetDecompositionStatus sets the "decomposition_status" field.
+func (_u *TaskUpdateOne) SetDecompositionStatus(v string) *TaskUpdateOne {
+	_u.mutation.SetDecompositionStatus(v)
+	return _u
+}
+
+// SetNillableDecompositionStatus sets the "decomposition_status" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableDecompositionStatus(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetDecompositionStatus(*v)
+	}
+	return _u
+}
+
+// SetOrgID sets the "org_id" field.
+func (_u *TaskUpdateOne) SetOrgID(v string) *TaskUpdateOne {
+	_u.mutation.SetOrgID(v)
+	return _u
+}
+
+// SetNillableOrgID sets the "org_id" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableOrgID(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetOrgID(*v)
+	}
+	return _u
+}
+
+// ClearOrgID clears the value of the "org_id" field.
+func (_u *TaskUpdateOne) ClearOrgID() *TaskUpdateOne {
+	_u.mutation.ClearOrgID()
+	return _u
+}
+
+// SetAssignedAgentID sets the "assigned_agent_id" field.
+func (_u *TaskUpdateOne) SetAssignedAgentID(v string) *TaskUpdateOne {
+	_u.mutation.SetAssignedAgentID(v)
+	return _u
+}
+
+// SetNillableAssignedAgentID sets the "assigned_agent_id" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableAssignedAgentID(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetAssignedAgentID(*v)
+	}
+	return _u
+}
+
+// ClearAssignedAgentID clears the value of the "assigned_agent_id" field.
+func (_u *TaskUpdateOne) ClearAssignedAgentID() *TaskUpdateOne {
+	_u.mutation.ClearAssignedAgentID()
+	return _u
+}
+
+// SetAssignedRoleID sets the "assigned_role_id" field.
+func (_u *TaskUpdateOne) SetAssignedRoleID(v string) *TaskUpdateOne {
+	_u.mutation.SetAssignedRoleID(v)
+	return _u
+}
+
+// SetNillableAssignedRoleID sets the "assigned_role_id" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableAssignedRoleID(v *string) *TaskUpdateOne {
+	if v != nil {
+		_u.SetAssignedRoleID(*v)
+	}
+	return _u
+}
+
+// ClearAssignedRoleID clears the value of the "assigned_role_id" field.
+func (_u *TaskUpdateOne) ClearAssignedRoleID() *TaskUpdateOne {
+	_u.mutation.ClearAssignedRoleID()
+	return _u
+}
+
 // Mutation returns the TaskMutation object of the builder.
 func (_u *TaskUpdateOne) Mutation() *TaskMutation {
 	return _u.mutation
@@ -821,6 +1130,45 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 	}
 	if value, ok := _u.mutation.CardJSON(); ok {
 		_spec.SetField(task.FieldCardJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ParentID(); ok {
+		_spec.SetField(task.FieldParentID, field.TypeString, value)
+	}
+	if _u.mutation.ParentIDCleared() {
+		_spec.ClearField(task.FieldParentID, field.TypeString)
+	}
+	if value, ok := _u.mutation.RootID(); ok {
+		_spec.SetField(task.FieldRootID, field.TypeString, value)
+	}
+	if _u.mutation.RootIDCleared() {
+		_spec.ClearField(task.FieldRootID, field.TypeString)
+	}
+	if value, ok := _u.mutation.Depth(); ok {
+		_spec.SetField(task.FieldDepth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedDepth(); ok {
+		_spec.AddField(task.FieldDepth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.DecompositionStatus(); ok {
+		_spec.SetField(task.FieldDecompositionStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OrgID(); ok {
+		_spec.SetField(task.FieldOrgID, field.TypeString, value)
+	}
+	if _u.mutation.OrgIDCleared() {
+		_spec.ClearField(task.FieldOrgID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AssignedAgentID(); ok {
+		_spec.SetField(task.FieldAssignedAgentID, field.TypeString, value)
+	}
+	if _u.mutation.AssignedAgentIDCleared() {
+		_spec.ClearField(task.FieldAssignedAgentID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AssignedRoleID(); ok {
+		_spec.SetField(task.FieldAssignedRoleID, field.TypeString, value)
+	}
+	if _u.mutation.AssignedRoleIDCleared() {
+		_spec.ClearField(task.FieldAssignedRoleID, field.TypeString)
 	}
 	_node = &Task{config: _u.config}
 	_spec.Assign = _node.assignValues

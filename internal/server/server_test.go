@@ -17,7 +17,6 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/event"
-	"github.com/mCP-DevOS/ai-orchestration-platform/ent/migrate"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/rs/zerolog"
@@ -36,7 +35,7 @@ func setupTestServer(t *testing.T) (*Server, *store.Repository, func()) {
 	client := ent.NewClient(ent.Driver(drv))
 
 	ctx := context.Background()
-	if err := client.Schema.Create(ctx, migrate.WithGlobalUniqueID(true)); err != nil {
+	if err := client.Schema.Create(ctx); err != nil {
 		t.Fatalf("failed to create schema: %v", err)
 	}
 
@@ -63,7 +62,7 @@ func setupTestServerWithClient(t *testing.T) (*Server, *store.Repository, *ent.C
 	client := ent.NewClient(ent.Driver(drv))
 
 	ctx := context.Background()
-	if err := client.Schema.Create(ctx, migrate.WithGlobalUniqueID(true)); err != nil {
+	if err := client.Schema.Create(ctx); err != nil {
 		t.Fatalf("failed to create schema: %v", err)
 	}
 

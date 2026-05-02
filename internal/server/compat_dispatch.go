@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/transport"
 )
@@ -53,6 +54,30 @@ func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry 
 	ownerAgent := normalizeCompatAgent(firstCompatNonEmpty(readString(payload, "owner_agent"), view.Transport))
 	projectID := normalizeCompatProjectID(firstCompatNonEmpty(readString(payload, "project_id"), requestedProjectID, s.defaultCompatProjectID()))
 	executionManager := s.compatExecutionForProject(projectID)
+
+	// Phase 5: intelligent routing — when agent is "auto" or empty, use router
+	if (ownerAgent == "auto" || ownerAgent == "") && s.taskRouter != nil {
+		orgID := readString(payload, "org_id")
+		// Auto-assign to default org if not specified
+		if orgID == "" {
+			orgID = GetDefaultOrgID(ctx, s.orgSvc)
+		}
+		if orgID != "" {
+			routeInput := router.RouteInput{
+				TaskID:         taskID,
+				TaskType:       readString(payload, "type"),
+				Capabilities:   compatStringSliceField(payload, "capabilities"),
+				OrgID:          orgID,
+				AssignedRoleID: readString(payload, "assigned_role_id"),
+			}
+			if selected, err := s.taskRouter.SelectBestAgent(ctx, routeInput); err == nil {
+				ownerAgent = selected
+				s.logger.Info().Str("task_id", taskID).Str("selected_agent", ownerAgent).Msg("router auto-selected agent")
+			} else {
+				s.logger.Warn().Err(err).Str("task_id", taskID).Msg("router failed, falling back to default agent")
+			}
+		}
+	}
 
 	runtimeSpec := compatRuntimeSpec{Name: inferRuntimeFromAgent(ownerAgent, "")}
 	if executionManager != nil {

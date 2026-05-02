@@ -8,6 +8,126 @@ import (
 )
 
 var (
+	// AgentsColumns holds the columns for the "agents" table.
+	AgentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "org_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "type", Type: field.TypeString, Size: 2147483647},
+		{Name: "role_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "status", Type: field.TypeString, Size: 2147483647, Default: "idle"},
+		{Name: "specialties", Type: field.TypeString, Size: 2147483647, Default: "[]"},
+		{Name: "config", Type: field.TypeString, Size: 2147483647, Default: "{}"},
+		{Name: "last_heartbeat_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// AgentsTable holds the schema information for the "agents" table.
+	AgentsTable = &schema.Table{
+		Name:       "agents",
+		Columns:    AgentsColumns,
+		PrimaryKey: []*schema.Column{AgentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "agent_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[1]},
+			},
+			{
+				Name:    "agent_role_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[4]},
+			},
+			{
+				Name:    "agent_status",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[5]},
+			},
+		},
+	}
+	// ContextEntriesColumns holds the columns for the "context_entries" table.
+	ContextEntriesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "space_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "key", Type: field.TypeString, Size: 2147483647},
+		{Name: "value", Type: field.TypeString, Size: 2147483647},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ContextEntriesTable holds the schema information for the "context_entries" table.
+	ContextEntriesTable = &schema.Table{
+		Name:       "context_entries",
+		Columns:    ContextEntriesColumns,
+		PrimaryKey: []*schema.Column{ContextEntriesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "contextentry_space_id",
+				Unique:  false,
+				Columns: []*schema.Column{ContextEntriesColumns[1]},
+			},
+			{
+				Name:    "contextentry_space_id_key",
+				Unique:  true,
+				Columns: []*schema.Column{ContextEntriesColumns[1], ContextEntriesColumns[2]},
+			},
+		},
+	}
+	// DepartmentsColumns holds the columns for the "departments" table.
+	DepartmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "org_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "lead_agent_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// DepartmentsTable holds the schema information for the "departments" table.
+	DepartmentsTable = &schema.Table{
+		Name:       "departments",
+		Columns:    DepartmentsColumns,
+		PrimaryKey: []*schema.Column{DepartmentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "department_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[1]},
+			},
+		},
+	}
+	// DocumentsColumns holds the columns for the "documents" table.
+	DocumentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "space_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "title", Type: field.TypeString, Size: 2147483647},
+		{Name: "content", Type: field.TypeString, Size: 2147483647},
+		{Name: "type", Type: field.TypeString, Size: 2147483647, Default: "note"},
+		{Name: "author_agent_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "version", Type: field.TypeInt, Default: 1},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DocumentsTable holds the schema information for the "documents" table.
+	DocumentsTable = &schema.Table{
+		Name:       "documents",
+		Columns:    DocumentsColumns,
+		PrimaryKey: []*schema.Column{DocumentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "document_space_id",
+				Unique:  false,
+				Columns: []*schema.Column{DocumentsColumns[1]},
+			},
+			{
+				Name:    "document_author_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{DocumentsColumns[5]},
+			},
+			{
+				Name:    "document_type",
+				Unique:  false,
+				Columns: []*schema.Column{DocumentsColumns[4]},
+			},
+		},
+	}
 	// EventsColumns holds the columns for the "events" table.
 	EventsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -52,6 +172,108 @@ var (
 			},
 		},
 	}
+	// KnowledgeSpacesColumns holds the columns for the "knowledge_spaces" table.
+	KnowledgeSpacesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "org_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "project_id", Type: field.TypeString, Size: 2147483647, Default: "default"},
+		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// KnowledgeSpacesTable holds the schema information for the "knowledge_spaces" table.
+	KnowledgeSpacesTable = &schema.Table{
+		Name:       "knowledge_spaces",
+		Columns:    KnowledgeSpacesColumns,
+		PrimaryKey: []*schema.Column{KnowledgeSpacesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "knowledgespace_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{KnowledgeSpacesColumns[1]},
+			},
+			{
+				Name:    "knowledgespace_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{KnowledgeSpacesColumns[2]},
+			},
+		},
+	}
+	// MessagesColumns holds the columns for the "messages" table.
+	MessagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "space_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "from_agent_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "to_agent_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "type", Type: field.TypeString, Size: 2147483647, Default: "status_update"},
+		{Name: "content", Type: field.TypeString, Size: 2147483647},
+		{Name: "read_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// MessagesTable holds the schema information for the "messages" table.
+	MessagesTable = &schema.Table{
+		Name:       "messages",
+		Columns:    MessagesColumns,
+		PrimaryKey: []*schema.Column{MessagesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "message_space_id",
+				Unique:  false,
+				Columns: []*schema.Column{MessagesColumns[1]},
+			},
+			{
+				Name:    "message_to_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{MessagesColumns[3]},
+			},
+			{
+				Name:    "message_from_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{MessagesColumns[2]},
+			},
+		},
+	}
+	// OrganizationsColumns holds the columns for the "organizations" table.
+	OrganizationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// OrganizationsTable holds the schema information for the "organizations" table.
+	OrganizationsTable = &schema.Table{
+		Name:       "organizations",
+		Columns:    OrganizationsColumns,
+		PrimaryKey: []*schema.Column{OrganizationsColumns[0]},
+	}
+	// RolesColumns holds the columns for the "roles" table.
+	RolesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "org_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "team_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "capabilities", Type: field.TypeString, Size: 2147483647, Default: "[]"},
+		{Name: "permissions", Type: field.TypeString, Size: 2147483647, Default: "[]"},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// RolesTable holds the schema information for the "roles" table.
+	RolesTable = &schema.Table{
+		Name:       "roles",
+		Columns:    RolesColumns,
+		PrimaryKey: []*schema.Column{RolesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "role_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{RolesColumns[1]},
+			},
+			{
+				Name:    "role_team_id",
+				Unique:  false,
+				Columns: []*schema.Column{RolesColumns[2]},
+			},
+		},
+	}
 	// TasksColumns holds the columns for the "tasks" table.
 	TasksColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
@@ -70,6 +292,13 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "terminal_at", Type: field.TypeTime, Nullable: true},
 		{Name: "card_json", Type: field.TypeString, Size: 2147483647},
+		{Name: "parent_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "root_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "depth", Type: field.TypeInt, Default: 0},
+		{Name: "decomposition_status", Type: field.TypeString, Size: 2147483647, Default: "none"},
+		{Name: "org_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "assigned_agent_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "assigned_role_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
 	}
 	// TasksTable holds the schema information for the "tasks" table.
 	TasksTable = &schema.Table{
@@ -102,6 +331,54 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3]},
 			},
+			{
+				Name:    "task_parent_id",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[16]},
+			},
+			{
+				Name:    "task_root_id",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[17]},
+			},
+			{
+				Name:    "task_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[20]},
+			},
+			{
+				Name:    "task_assigned_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[21]},
+			},
+		},
+	}
+	// TeamsColumns holds the columns for the "teams" table.
+	TeamsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "org_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "dept_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "lead_agent_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// TeamsTable holds the schema information for the "teams" table.
+	TeamsTable = &schema.Table{
+		Name:       "teams",
+		Columns:    TeamsColumns,
+		PrimaryKey: []*schema.Column{TeamsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "team_org_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[1]},
+			},
+			{
+				Name:    "team_dept_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[2]},
+			},
 		},
 	}
 	// WavesColumns holds the columns for the "waves" table.
@@ -133,8 +410,17 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AgentsTable,
+		ContextEntriesTable,
+		DepartmentsTable,
+		DocumentsTable,
 		EventsTable,
+		KnowledgeSpacesTable,
+		MessagesTable,
+		OrganizationsTable,
+		RolesTable,
 		TasksTable,
+		TeamsTable,
 		WavesTable,
 	}
 )

@@ -6,8 +6,8 @@ import (
 
 func TestAllStates(t *testing.T) {
 	states := AllStates()
-	if len(states) != 14 {
-		t.Errorf("Expected 14 states, got %d", len(states))
+	if len(states) != 17 {
+		t.Errorf("Expected 17 states, got %d", len(states))
 	}
 }
 

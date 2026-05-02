@@ -5,9 +5,18 @@ package ent
 import (
 	"time"
 
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/document"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/event"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/knowledgespace"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/message"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/organization"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/schema"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 )
 
@@ -15,6 +24,54 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	agentFields := schema.Agent{}.Fields()
+	_ = agentFields
+	// agentDescStatus is the schema descriptor for status field.
+	agentDescStatus := agentFields[5].Descriptor()
+	// agent.DefaultStatus holds the default value on creation for the status field.
+	agent.DefaultStatus = agentDescStatus.Default.(string)
+	// agentDescSpecialties is the schema descriptor for specialties field.
+	agentDescSpecialties := agentFields[6].Descriptor()
+	// agent.DefaultSpecialties holds the default value on creation for the specialties field.
+	agent.DefaultSpecialties = agentDescSpecialties.Default.(string)
+	// agentDescConfig is the schema descriptor for config field.
+	agentDescConfig := agentFields[7].Descriptor()
+	// agent.DefaultConfig holds the default value on creation for the config field.
+	agent.DefaultConfig = agentDescConfig.Default.(string)
+	// agentDescCreatedAt is the schema descriptor for created_at field.
+	agentDescCreatedAt := agentFields[9].Descriptor()
+	// agent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	agent.DefaultCreatedAt = agentDescCreatedAt.Default.(func() time.Time)
+	contextentryFields := schema.ContextEntry{}.Fields()
+	_ = contextentryFields
+	// contextentryDescUpdatedAt is the schema descriptor for updated_at field.
+	contextentryDescUpdatedAt := contextentryFields[5].Descriptor()
+	// contextentry.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	contextentry.DefaultUpdatedAt = contextentryDescUpdatedAt.Default.(func() time.Time)
+	departmentFields := schema.Department{}.Fields()
+	_ = departmentFields
+	// departmentDescCreatedAt is the schema descriptor for created_at field.
+	departmentDescCreatedAt := departmentFields[5].Descriptor()
+	// department.DefaultCreatedAt holds the default value on creation for the created_at field.
+	department.DefaultCreatedAt = departmentDescCreatedAt.Default.(func() time.Time)
+	documentFields := schema.Document{}.Fields()
+	_ = documentFields
+	// documentDescType is the schema descriptor for type field.
+	documentDescType := documentFields[4].Descriptor()
+	// document.DefaultType holds the default value on creation for the type field.
+	document.DefaultType = documentDescType.Default.(string)
+	// documentDescVersion is the schema descriptor for version field.
+	documentDescVersion := documentFields[6].Descriptor()
+	// document.DefaultVersion holds the default value on creation for the version field.
+	document.DefaultVersion = documentDescVersion.Default.(int)
+	// documentDescCreatedAt is the schema descriptor for created_at field.
+	documentDescCreatedAt := documentFields[7].Descriptor()
+	// document.DefaultCreatedAt holds the default value on creation for the created_at field.
+	document.DefaultCreatedAt = documentDescCreatedAt.Default.(func() time.Time)
+	// documentDescUpdatedAt is the schema descriptor for updated_at field.
+	documentDescUpdatedAt := documentFields[8].Descriptor()
+	// document.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	document.DefaultUpdatedAt = documentDescUpdatedAt.Default.(func() time.Time)
 	eventFields := schema.Event{}.Fields()
 	_ = eventFields
 	// eventDescProjectID is the schema descriptor for project_id field.
@@ -29,6 +86,46 @@ func init() {
 	eventDescAttempt := eventFields[8].Descriptor()
 	// event.DefaultAttempt holds the default value on creation for the attempt field.
 	event.DefaultAttempt = eventDescAttempt.Default.(int)
+	knowledgespaceFields := schema.KnowledgeSpace{}.Fields()
+	_ = knowledgespaceFields
+	// knowledgespaceDescProjectID is the schema descriptor for project_id field.
+	knowledgespaceDescProjectID := knowledgespaceFields[2].Descriptor()
+	// knowledgespace.DefaultProjectID holds the default value on creation for the project_id field.
+	knowledgespace.DefaultProjectID = knowledgespaceDescProjectID.Default.(string)
+	// knowledgespaceDescCreatedAt is the schema descriptor for created_at field.
+	knowledgespaceDescCreatedAt := knowledgespaceFields[5].Descriptor()
+	// knowledgespace.DefaultCreatedAt holds the default value on creation for the created_at field.
+	knowledgespace.DefaultCreatedAt = knowledgespaceDescCreatedAt.Default.(func() time.Time)
+	messageFields := schema.Message{}.Fields()
+	_ = messageFields
+	// messageDescType is the schema descriptor for type field.
+	messageDescType := messageFields[4].Descriptor()
+	// message.DefaultType holds the default value on creation for the type field.
+	message.DefaultType = messageDescType.Default.(string)
+	// messageDescCreatedAt is the schema descriptor for created_at field.
+	messageDescCreatedAt := messageFields[7].Descriptor()
+	// message.DefaultCreatedAt holds the default value on creation for the created_at field.
+	message.DefaultCreatedAt = messageDescCreatedAt.Default.(func() time.Time)
+	organizationFields := schema.Organization{}.Fields()
+	_ = organizationFields
+	// organizationDescCreatedAt is the schema descriptor for created_at field.
+	organizationDescCreatedAt := organizationFields[3].Descriptor()
+	// organization.DefaultCreatedAt holds the default value on creation for the created_at field.
+	organization.DefaultCreatedAt = organizationDescCreatedAt.Default.(func() time.Time)
+	roleFields := schema.Role{}.Fields()
+	_ = roleFields
+	// roleDescCapabilities is the schema descriptor for capabilities field.
+	roleDescCapabilities := roleFields[4].Descriptor()
+	// role.DefaultCapabilities holds the default value on creation for the capabilities field.
+	role.DefaultCapabilities = roleDescCapabilities.Default.(string)
+	// roleDescPermissions is the schema descriptor for permissions field.
+	roleDescPermissions := roleFields[5].Descriptor()
+	// role.DefaultPermissions holds the default value on creation for the permissions field.
+	role.DefaultPermissions = roleDescPermissions.Default.(string)
+	// roleDescCreatedAt is the schema descriptor for created_at field.
+	roleDescCreatedAt := roleFields[6].Descriptor()
+	// role.DefaultCreatedAt holds the default value on creation for the created_at field.
+	role.DefaultCreatedAt = roleDescCreatedAt.Default.(func() time.Time)
 	taskFields := schema.Task{}.Fields()
 	_ = taskFields
 	// taskDescProjectID is the schema descriptor for project_id field.
@@ -59,6 +156,20 @@ func init() {
 	taskDescUpdatedAt := taskFields[13].Descriptor()
 	// task.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
+	// taskDescDepth is the schema descriptor for depth field.
+	taskDescDepth := taskFields[18].Descriptor()
+	// task.DefaultDepth holds the default value on creation for the depth field.
+	task.DefaultDepth = taskDescDepth.Default.(int)
+	// taskDescDecompositionStatus is the schema descriptor for decomposition_status field.
+	taskDescDecompositionStatus := taskFields[19].Descriptor()
+	// task.DefaultDecompositionStatus holds the default value on creation for the decomposition_status field.
+	task.DefaultDecompositionStatus = taskDescDecompositionStatus.Default.(string)
+	teamFields := schema.Team{}.Fields()
+	_ = teamFields
+	// teamDescCreatedAt is the schema descriptor for created_at field.
+	teamDescCreatedAt := teamFields[6].Descriptor()
+	// team.DefaultCreatedAt holds the default value on creation for the created_at field.
+	team.DefaultCreatedAt = teamDescCreatedAt.Default.(func() time.Time)
 	waveFields := schema.Wave{}.Fields()
 	_ = waveFields
 	// waveDescProjectID is the schema descriptor for project_id field.

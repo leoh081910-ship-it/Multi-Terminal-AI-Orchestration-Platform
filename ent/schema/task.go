@@ -44,6 +44,21 @@ func (Task) Fields() []ent.Field {
 		field.Time("terminal_at").
 			Optional(),
 		field.Text("card_json"),
+		// Phase 2: task hierarchy and decomposition
+		field.Text("parent_id").
+			Optional(),
+		field.Text("root_id").
+			Optional(),
+		field.Int("depth").
+			Default(0),
+		field.Text("decomposition_status").
+			Default("none"),
+		field.Text("org_id").
+			Optional(),
+		field.Text("assigned_agent_id").
+			Optional(),
+		field.Text("assigned_role_id").
+			Optional(),
 	}
 }
 
@@ -60,5 +75,9 @@ func (Task) Indexes() []ent.Index {
 		index.Fields("state"),
 		index.Fields("wave"),
 		index.Fields("project_id", "state"),
+		index.Fields("parent_id"),
+		index.Fields("root_id"),
+		index.Fields("org_id"),
+		index.Fields("assigned_agent_id"),
 	}
 }

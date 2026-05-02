@@ -46,8 +46,22 @@ type Task struct {
 	// TerminalAt holds the value of the "terminal_at" field.
 	TerminalAt time.Time `json:"terminal_at,omitempty"`
 	// CardJSON holds the value of the "card_json" field.
-	CardJSON     string `json:"card_json,omitempty"`
-	selectValues sql.SelectValues
+	CardJSON string `json:"card_json,omitempty"`
+	// ParentID holds the value of the "parent_id" field.
+	ParentID string `json:"parent_id,omitempty"`
+	// RootID holds the value of the "root_id" field.
+	RootID string `json:"root_id,omitempty"`
+	// Depth holds the value of the "depth" field.
+	Depth int `json:"depth,omitempty"`
+	// DecompositionStatus holds the value of the "decomposition_status" field.
+	DecompositionStatus string `json:"decomposition_status,omitempty"`
+	// OrgID holds the value of the "org_id" field.
+	OrgID string `json:"org_id,omitempty"`
+	// AssignedAgentID holds the value of the "assigned_agent_id" field.
+	AssignedAgentID string `json:"assigned_agent_id,omitempty"`
+	// AssignedRoleID holds the value of the "assigned_role_id" field.
+	AssignedRoleID string `json:"assigned_role_id,omitempty"`
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -55,9 +69,9 @@ func (*Task) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case task.FieldRetryCount, task.FieldLoopIterationCount, task.FieldWave, task.FieldTopoRank:
+		case task.FieldRetryCount, task.FieldLoopIterationCount, task.FieldWave, task.FieldTopoRank, task.FieldDepth:
 			values[i] = new(sql.NullInt64)
-		case task.FieldID, task.FieldProjectID, task.FieldDispatchRef, task.FieldState, task.FieldTransport, task.FieldWorkspacePath, task.FieldArtifactPath, task.FieldLastErrorReason, task.FieldCardJSON:
+		case task.FieldID, task.FieldProjectID, task.FieldDispatchRef, task.FieldState, task.FieldTransport, task.FieldWorkspacePath, task.FieldArtifactPath, task.FieldLastErrorReason, task.FieldCardJSON, task.FieldParentID, task.FieldRootID, task.FieldDecompositionStatus, task.FieldOrgID, task.FieldAssignedAgentID, task.FieldAssignedRoleID:
 			values[i] = new(sql.NullString)
 		case task.FieldCreatedAt, task.FieldUpdatedAt, task.FieldTerminalAt:
 			values[i] = new(sql.NullTime)
@@ -172,6 +186,48 @@ func (_m *Task) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.CardJSON = value.String
 			}
+		case task.FieldParentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field parent_id", values[i])
+			} else if value.Valid {
+				_m.ParentID = value.String
+			}
+		case task.FieldRootID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field root_id", values[i])
+			} else if value.Valid {
+				_m.RootID = value.String
+			}
+		case task.FieldDepth:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field depth", values[i])
+			} else if value.Valid {
+				_m.Depth = int(value.Int64)
+			}
+		case task.FieldDecompositionStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field decomposition_status", values[i])
+			} else if value.Valid {
+				_m.DecompositionStatus = value.String
+			}
+		case task.FieldOrgID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field org_id", values[i])
+			} else if value.Valid {
+				_m.OrgID = value.String
+			}
+		case task.FieldAssignedAgentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field assigned_agent_id", values[i])
+			} else if value.Valid {
+				_m.AssignedAgentID = value.String
+			}
+		case task.FieldAssignedRoleID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field assigned_role_id", values[i])
+			} else if value.Valid {
+				_m.AssignedRoleID = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -252,6 +308,27 @@ func (_m *Task) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("card_json=")
 	builder.WriteString(_m.CardJSON)
+	builder.WriteString(", ")
+	builder.WriteString("parent_id=")
+	builder.WriteString(_m.ParentID)
+	builder.WriteString(", ")
+	builder.WriteString("root_id=")
+	builder.WriteString(_m.RootID)
+	builder.WriteString(", ")
+	builder.WriteString("depth=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Depth))
+	builder.WriteString(", ")
+	builder.WriteString("decomposition_status=")
+	builder.WriteString(_m.DecompositionStatus)
+	builder.WriteString(", ")
+	builder.WriteString("org_id=")
+	builder.WriteString(_m.OrgID)
+	builder.WriteString(", ")
+	builder.WriteString("assigned_agent_id=")
+	builder.WriteString(_m.AssignedAgentID)
+	builder.WriteString(", ")
+	builder.WriteString("assigned_role_id=")
+	builder.WriteString(_m.AssignedRoleID)
 	builder.WriteByte(')')
 	return builder.String()
 }
