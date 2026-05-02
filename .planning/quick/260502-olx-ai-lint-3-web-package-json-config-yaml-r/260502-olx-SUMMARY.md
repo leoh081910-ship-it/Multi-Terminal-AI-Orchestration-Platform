@@ -61,7 +61,7 @@ Each implementation task was committed atomically:
 
 1. **Task 1: Fix the three frontend lint errors without changing UI behavior** - `7ce4970` (fix)
 2. **Task 2: Replace stale hardcoded old-project paths in frontend and runtime config** - `1c77c12` (fix)
-3. **Task 3: Rerun validation and record remaining environment blockers** - pending docs commit
+3. **Task 3: Rerun validation and record remaining environment blockers** - `24cc096` (docs)
 
 ## Files Created/Modified
 
@@ -120,3 +120,4 @@ None found in files created or modified by this quick task.
 - FOUND: `.planning/quick/260502-olx-ai-lint-3-web-package-json-config-yaml-r/260502-olx-SUMMARY.md`
 - FOUND: `7ce4970`
 - FOUND: `1c77c12`
+- FOUND: `24cc096`
