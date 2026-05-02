@@ -5,7 +5,7 @@ milestone_name: runtime-reliability
 status: completed
 stopped_at: quick-260502-olx complete
 last_updated: "2026-05-02T17:55:17+08:00"
-last_activity: 2026-05-02 -- Fixed frontend lint/path relocation quick task; lint passes, Go shim and Vite build blocker recorded
+last_activity: 2026-05-02 -- Fixed frontend lint/path relocation quick task; lint/build and startup checks pass, Go shim blocker recorded
 progress:
   total_phases: 3
   completed_phases: 3
@@ -53,9 +53,9 @@ Status: completed
 ## Current Validation Baseline
 
 - `web`: `npm run lint` 通过（2026-05-02 quick-260502-olx）
-- `web`: `npm run build` 阻塞：Vite/Rollup 在 transform 后退出，bash 码 127；child process Windows status 3221226505，无 stderr
+- `web`: `npm run build` 通过（2026-05-02 quick-260502-olx）
 - `go test ./...` 阻塞：Scoop Go shim 无法创建 `C:\Users\leoh0\scoop\apps\go\current\bin\go.exe`
-- `GET /board`、`GET /api/v1/system/health`、`GET /health` 在已有本地 8080 服务上返回 200 OK
+- `GET /board`、`GET /api/v1/system/health`、`GET /health` 返回 200 OK
 
 ### Previous Baseline (2026-04-12)
 
