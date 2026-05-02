@@ -15,6 +15,7 @@ import (
 
 	entdialect "entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/migrate"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/auth"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/server"
@@ -124,6 +126,13 @@ func main() {
 	srv := server.New(repo, log.Logger)
 	srv.SetWebDistDir(viper.GetString("web.dist_dir"))
 
+	// Initialize authentication
+	tokenRepo := auth.NewEntTokenRepository(client)
+	tokenService := auth.NewTokenService(tokenRepo)
+	authMiddleware := auth.NewMiddleware(tokenService)
+	tokenHandler := server.NewTokenHandler(tokenService)
+	log.Info().Msg("Authentication system initialized")
+
 	// Phase 5: Initialize intelligent router
 	routingCfg := router.Config{
 		Strategy: router.Strategy(viper.GetString("routing.strategy")),
@@ -146,6 +155,11 @@ func main() {
 	if err := srv.ConfigureCompatProjects(projectsConfig); err != nil {
 		log.Fatal().Err(err).Msg("failed to configure projects")
 	}
+
+	// Register authentication routes
+	srv.RegisterAuthRoutes(srv.Handler().(*chi.Mux), tokenHandler, authMiddleware)
+	log.Info().Msg("Authentication routes registered")
+
 	srv.SetProjectConfigStore(server.NewProjectConfigStore(*configPath))
 	queueCtx, queueCancel := context.WithCancel(context.Background())
 	defer queueCancel()

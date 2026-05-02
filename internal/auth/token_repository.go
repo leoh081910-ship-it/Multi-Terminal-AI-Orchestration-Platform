@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourusername/ai-orchestration-platform/ent"
-	"github.com/yourusername/ai-orchestration-platform/ent/apitoken"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/apitoken"
 )
 
 // EntTokenRepository implements TokenRepository using ent
@@ -135,36 +135,27 @@ func (r *EntTokenRepository) RevokeToken(ctx context.Context, tokenID string, re
 // entTokenToAPIToken converts ent.APIToken to auth.APIToken
 func entTokenToAPIToken(t *ent.APIToken) *APIToken {
 	token := &APIToken{
-		ID:        t.ID,
-		Token:     t.Token,
-		Name:      t.Name,
-		UserID:    t.UserID,
-		CreatedAt: t.CreatedAt,
-		Revoked:   t.Revoked,
+		ID:              t.ID,
+		Token:           t.Token,
+		Name:            t.Name,
+		Description:     t.Description,
+		UserID:          t.UserID,
+		Scopes:          t.Scopes,
+		CreatedAt:       t.CreatedAt,
+		Revoked:         t.Revoked,
+		RevokedReason:   t.RevokedReason,
 	}
 
-	if desc, ok := t.Description(); ok {
-		token.Description = desc
+	if !t.ExpiresAt.IsZero() {
+		token.ExpiresAt = &t.ExpiresAt
 	}
 
-	if scopes, ok := t.Scopes(); ok {
-		token.Scopes = scopes
+	if !t.LastUsedAt.IsZero() {
+		token.LastUsedAt = &t.LastUsedAt
 	}
 
-	if exp, ok := t.ExpiresAt(); ok {
-		token.ExpiresAt = &exp
-	}
-
-	if lastUsed, ok := t.LastUsedAt(); ok {
-		token.LastUsedAt = &lastUsed
-	}
-
-	if revokedAt, ok := t.RevokedAt(); ok {
-		token.RevokedAt = &revokedAt
-	}
-
-	if reason, ok := t.RevokedReason(); ok {
-		token.RevokedReason = reason
+	if !t.RevokedAt.IsZero() {
+		token.RevokedAt = &t.RevokedAt
 	}
 
 	return token

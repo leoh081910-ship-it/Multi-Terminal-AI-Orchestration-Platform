@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/yourusername/ai-orchestration-platform/internal/auth"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/auth"
 )
 
 // TokenHandler handles token-related HTTP requests
