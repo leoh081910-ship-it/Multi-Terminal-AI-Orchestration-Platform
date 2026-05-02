@@ -4,10 +4,10 @@
     "version":  "0.0.0",
     "type":  "module",
     "scripts":  {
-                    "dev":  "cmd /d /c \"node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js dev --config E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\vite.config.ts\"",
-                    "build":  "cmd /d /c \"node .\\\\node_modules\\\\typescript\\\\bin\\\\tsc -b \u0026\u0026 node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js build --config E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\vite.config.ts --outDir E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\dist\"",
+                    "dev":  "cmd /d /c \"node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js dev --config .\\\\vite.config.ts\"",
+                    "build":  "cmd /d /c \"node .\\\\node_modules\\\\typescript\\\\bin\\\\tsc -b \u0026\u0026 node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js build --config .\\\\vite.config.ts --outDir .\\\\dist\"",
                     "lint":  "eslint .",
-                    "preview":  "cmd /d /c \"node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js preview --config E:\\\\04-Claude\\\\Projects\\\\ai-orchestration-platform\\\\web\\\\vite.config.ts\""
+                    "preview":  "cmd /d /c \"node .\\\\node_modules\\\\vite\\\\bin\\\\vite.js preview --config .\\\\vite.config.ts\""
                 },
     "dependencies":  {
                          "@tanstack/react-query":  "^5.96.2",
