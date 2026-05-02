@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/apitoken"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/document"
@@ -17,6 +18,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/schema"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 )
 
@@ -24,6 +26,16 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	apitokenFields := schema.APIToken{}.Fields()
+	_ = apitokenFields
+	// apitokenDescCreatedAt is the schema descriptor for created_at field.
+	apitokenDescCreatedAt := apitokenFields[6].Descriptor()
+	// apitoken.DefaultCreatedAt holds the default value on creation for the created_at field.
+	apitoken.DefaultCreatedAt = apitokenDescCreatedAt.Default.(func() time.Time)
+	// apitokenDescRevoked is the schema descriptor for revoked field.
+	apitokenDescRevoked := apitokenFields[9].Descriptor()
+	// apitoken.DefaultRevoked holds the default value on creation for the revoked field.
+	apitoken.DefaultRevoked = apitokenDescRevoked.Default.(bool)
 	agentFields := schema.Agent{}.Fields()
 	_ = agentFields
 	// agentDescStatus is the schema descriptor for status field.
@@ -170,6 +182,22 @@ func init() {
 	teamDescCreatedAt := teamFields[6].Descriptor()
 	// team.DefaultCreatedAt holds the default value on creation for the created_at field.
 	team.DefaultCreatedAt = teamDescCreatedAt.Default.(func() time.Time)
+	userFields := schema.User{}.Fields()
+	_ = userFields
+	// userDescActive is the schema descriptor for active field.
+	userDescActive := userFields[5].Descriptor()
+	// user.DefaultActive holds the default value on creation for the active field.
+	user.DefaultActive = userDescActive.Default.(bool)
+	// userDescCreatedAt is the schema descriptor for created_at field.
+	userDescCreatedAt := userFields[6].Descriptor()
+	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
+	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
+	// userDescUpdatedAt is the schema descriptor for updated_at field.
+	userDescUpdatedAt := userFields[7].Descriptor()
+	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
+	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	user.UpdateDefaultUpdatedAt = userDescUpdatedAt.UpdateDefault.(func() time.Time)
 	waveFields := schema.Wave{}.Fields()
 	_ = waveFields
 	// waveDescProjectID is the schema descriptor for project_id field.

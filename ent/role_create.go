@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 )
 
 // RoleCreate is the builder for creating a Role entity.
@@ -84,6 +85,21 @@ func (_c *RoleCreate) SetNillableCreatedAt(v *time.Time) *RoleCreate {
 func (_c *RoleCreate) SetID(v string) *RoleCreate {
 	_c.mutation.SetID(v)
 	return _c
+}
+
+// AddUserIDs adds the "users" edge to the User entity by IDs.
+func (_c *RoleCreate) AddUserIDs(ids ...string) *RoleCreate {
+	_c.mutation.AddUserIDs(ids...)
+	return _c
+}
+
+// AddUsers adds the "users" edges to the User entity.
+func (_c *RoleCreate) AddUsers(v ...*User) *RoleCreate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddUserIDs(ids...)
 }
 
 // Mutation returns the RoleMutation object of the builder.
@@ -213,6 +229,22 @@ func (_c *RoleCreate) createSpec() (*Role, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(role.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
+	}
+	if nodes := _c.mutation.UsersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   role.UsersTable,
+			Columns: role.UsersPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

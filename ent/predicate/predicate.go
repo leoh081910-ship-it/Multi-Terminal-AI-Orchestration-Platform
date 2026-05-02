@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// APIToken is the predicate function for apitoken builders.
+type APIToken func(*sql.Selector)
+
 // Agent is the predicate function for agent builders.
 type Agent func(*sql.Selector)
 
@@ -38,6 +41,9 @@ type Task func(*sql.Selector)
 
 // Team is the predicate function for team builders.
 type Team func(*sql.Selector)
+
+// User is the predicate function for user builders.
+type User func(*sql.Selector)
 
 // Wave is the predicate function for wave builders.
 type Wave func(*sql.Selector)

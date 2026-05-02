@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"time"
@@ -32,7 +33,10 @@ func (Role) Fields() []ent.Field {
 
 // Edges of the Role.
 func (Role) Edges() []ent.Edge {
-	return []ent.Edge{}
+	return []ent.Edge{
+		edge.From("users", User.Type).
+			Ref("roles"),
+	}
 }
 
 // Indexes of the Role.

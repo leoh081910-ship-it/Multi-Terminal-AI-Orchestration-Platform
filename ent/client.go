@@ -14,7 +14,9 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/apitoken"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/document"
@@ -25,6 +27,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 )
 
@@ -33,6 +36,8 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// APIToken is the client for interacting with the APIToken builders.
+	APIToken *APITokenClient
 	// Agent is the client for interacting with the Agent builders.
 	Agent *AgentClient
 	// ContextEntry is the client for interacting with the ContextEntry builders.
@@ -55,6 +60,8 @@ type Client struct {
 	Task *TaskClient
 	// Team is the client for interacting with the Team builders.
 	Team *TeamClient
+	// User is the client for interacting with the User builders.
+	User *UserClient
 	// Wave is the client for interacting with the Wave builders.
 	Wave *WaveClient
 }
@@ -68,6 +75,7 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.APIToken = NewAPITokenClient(c.config)
 	c.Agent = NewAgentClient(c.config)
 	c.ContextEntry = NewContextEntryClient(c.config)
 	c.Department = NewDepartmentClient(c.config)
@@ -79,6 +87,7 @@ func (c *Client) init() {
 	c.Role = NewRoleClient(c.config)
 	c.Task = NewTaskClient(c.config)
 	c.Team = NewTeamClient(c.config)
+	c.User = NewUserClient(c.config)
 	c.Wave = NewWaveClient(c.config)
 }
 
@@ -172,6 +181,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:            ctx,
 		config:         cfg,
+		APIToken:       NewAPITokenClient(cfg),
 		Agent:          NewAgentClient(cfg),
 		ContextEntry:   NewContextEntryClient(cfg),
 		Department:     NewDepartmentClient(cfg),
@@ -183,6 +193,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Role:           NewRoleClient(cfg),
 		Task:           NewTaskClient(cfg),
 		Team:           NewTeamClient(cfg),
+		User:           NewUserClient(cfg),
 		Wave:           NewWaveClient(cfg),
 	}, nil
 }
@@ -203,6 +214,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:            ctx,
 		config:         cfg,
+		APIToken:       NewAPITokenClient(cfg),
 		Agent:          NewAgentClient(cfg),
 		ContextEntry:   NewContextEntryClient(cfg),
 		Department:     NewDepartmentClient(cfg),
@@ -214,6 +226,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Role:           NewRoleClient(cfg),
 		Task:           NewTaskClient(cfg),
 		Team:           NewTeamClient(cfg),
+		User:           NewUserClient(cfg),
 		Wave:           NewWaveClient(cfg),
 	}, nil
 }
@@ -221,7 +234,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		Agent.
+//		APIToken.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -244,8 +257,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Agent, c.ContextEntry, c.Department, c.Document, c.Event, c.KnowledgeSpace,
-		c.Message, c.Organization, c.Role, c.Task, c.Team, c.Wave,
+		c.APIToken, c.Agent, c.ContextEntry, c.Department, c.Document, c.Event,
+		c.KnowledgeSpace, c.Message, c.Organization, c.Role, c.Task, c.Team, c.User,
+		c.Wave,
 	} {
 		n.Use(hooks...)
 	}
@@ -255,8 +269,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Agent, c.ContextEntry, c.Department, c.Document, c.Event, c.KnowledgeSpace,
-		c.Message, c.Organization, c.Role, c.Task, c.Team, c.Wave,
+		c.APIToken, c.Agent, c.ContextEntry, c.Department, c.Document, c.Event,
+		c.KnowledgeSpace, c.Message, c.Organization, c.Role, c.Task, c.Team, c.User,
+		c.Wave,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -265,6 +280,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *APITokenMutation:
+		return c.APIToken.mutate(ctx, m)
 	case *AgentMutation:
 		return c.Agent.mutate(ctx, m)
 	case *ContextEntryMutation:
@@ -287,10 +304,145 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Task.mutate(ctx, m)
 	case *TeamMutation:
 		return c.Team.mutate(ctx, m)
+	case *UserMutation:
+		return c.User.mutate(ctx, m)
 	case *WaveMutation:
 		return c.Wave.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// APITokenClient is a client for the APIToken schema.
+type APITokenClient struct {
+	config
+}
+
+// NewAPITokenClient returns a client for the APIToken from the given config.
+func NewAPITokenClient(c config) *APITokenClient {
+	return &APITokenClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `apitoken.Hooks(f(g(h())))`.
+func (c *APITokenClient) Use(hooks ...Hook) {
+	c.hooks.APIToken = append(c.hooks.APIToken, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `apitoken.Intercept(f(g(h())))`.
+func (c *APITokenClient) Intercept(interceptors ...Interceptor) {
+	c.inters.APIToken = append(c.inters.APIToken, interceptors...)
+}
+
+// Create returns a builder for creating a APIToken entity.
+func (c *APITokenClient) Create() *APITokenCreate {
+	mutation := newAPITokenMutation(c.config, OpCreate)
+	return &APITokenCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of APIToken entities.
+func (c *APITokenClient) CreateBulk(builders ...*APITokenCreate) *APITokenCreateBulk {
+	return &APITokenCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *APITokenClient) MapCreateBulk(slice any, setFunc func(*APITokenCreate, int)) *APITokenCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &APITokenCreateBulk{err: fmt.Errorf("calling to APITokenClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*APITokenCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &APITokenCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for APIToken.
+func (c *APITokenClient) Update() *APITokenUpdate {
+	mutation := newAPITokenMutation(c.config, OpUpdate)
+	return &APITokenUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *APITokenClient) UpdateOne(_m *APIToken) *APITokenUpdateOne {
+	mutation := newAPITokenMutation(c.config, OpUpdateOne, withAPIToken(_m))
+	return &APITokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *APITokenClient) UpdateOneID(id string) *APITokenUpdateOne {
+	mutation := newAPITokenMutation(c.config, OpUpdateOne, withAPITokenID(id))
+	return &APITokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for APIToken.
+func (c *APITokenClient) Delete() *APITokenDelete {
+	mutation := newAPITokenMutation(c.config, OpDelete)
+	return &APITokenDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *APITokenClient) DeleteOne(_m *APIToken) *APITokenDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *APITokenClient) DeleteOneID(id string) *APITokenDeleteOne {
+	builder := c.Delete().Where(apitoken.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &APITokenDeleteOne{builder}
+}
+
+// Query returns a query builder for APIToken.
+func (c *APITokenClient) Query() *APITokenQuery {
+	return &APITokenQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAPIToken},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a APIToken entity by its id.
+func (c *APITokenClient) Get(ctx context.Context, id string) (*APIToken, error) {
+	return c.Query().Where(apitoken.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *APITokenClient) GetX(ctx context.Context, id string) *APIToken {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *APITokenClient) Hooks() []Hook {
+	return c.hooks.APIToken
+}
+
+// Interceptors returns the client interceptors.
+func (c *APITokenClient) Interceptors() []Interceptor {
+	return c.inters.APIToken
+}
+
+func (c *APITokenClient) mutate(ctx context.Context, m *APITokenMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&APITokenCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&APITokenUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&APITokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&APITokenDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown APIToken mutation op: %q", m.Op())
 	}
 }
 
@@ -1466,6 +1618,22 @@ func (c *RoleClient) GetX(ctx context.Context, id string) *Role {
 	return obj
 }
 
+// QueryUsers queries the users edge of a Role.
+func (c *RoleClient) QueryUsers(_m *Role) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(role.Table, role.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, true, role.UsersTable, role.UsersPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *RoleClient) Hooks() []Hook {
 	return c.hooks.Role
@@ -1757,6 +1925,171 @@ func (c *TeamClient) mutate(ctx context.Context, m *TeamMutation) (Value, error)
 	}
 }
 
+// UserClient is a client for the User schema.
+type UserClient struct {
+	config
+}
+
+// NewUserClient returns a client for the User from the given config.
+func NewUserClient(c config) *UserClient {
+	return &UserClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `user.Hooks(f(g(h())))`.
+func (c *UserClient) Use(hooks ...Hook) {
+	c.hooks.User = append(c.hooks.User, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `user.Intercept(f(g(h())))`.
+func (c *UserClient) Intercept(interceptors ...Interceptor) {
+	c.inters.User = append(c.inters.User, interceptors...)
+}
+
+// Create returns a builder for creating a User entity.
+func (c *UserClient) Create() *UserCreate {
+	mutation := newUserMutation(c.config, OpCreate)
+	return &UserCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of User entities.
+func (c *UserClient) CreateBulk(builders ...*UserCreate) *UserCreateBulk {
+	return &UserCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserClient) MapCreateBulk(slice any, setFunc func(*UserCreate, int)) *UserCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserCreateBulk{err: fmt.Errorf("calling to UserClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for User.
+func (c *UserClient) Update() *UserUpdate {
+	mutation := newUserMutation(c.config, OpUpdate)
+	return &UserUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserClient) UpdateOne(_m *User) *UserUpdateOne {
+	mutation := newUserMutation(c.config, OpUpdateOne, withUser(_m))
+	return &UserUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserClient) UpdateOneID(id string) *UserUpdateOne {
+	mutation := newUserMutation(c.config, OpUpdateOne, withUserID(id))
+	return &UserUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for User.
+func (c *UserClient) Delete() *UserDelete {
+	mutation := newUserMutation(c.config, OpDelete)
+	return &UserDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserClient) DeleteOne(_m *User) *UserDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserClient) DeleteOneID(id string) *UserDeleteOne {
+	builder := c.Delete().Where(user.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserDeleteOne{builder}
+}
+
+// Query returns a query builder for User.
+func (c *UserClient) Query() *UserQuery {
+	return &UserQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUser},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a User entity by its id.
+func (c *UserClient) Get(ctx context.Context, id string) (*User, error) {
+	return c.Query().Where(user.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserClient) GetX(ctx context.Context, id string) *User {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRoles queries the roles edge of a User.
+func (c *UserClient) QueryRoles(_m *User) *RoleQuery {
+	query := (&RoleClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(role.Table, role.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, user.RolesTable, user.RolesPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTokens queries the tokens edge of a User.
+func (c *UserClient) QueryTokens(_m *User) *APITokenQuery {
+	query := (&APITokenClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(apitoken.Table, apitoken.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TokensTable, user.TokensColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserClient) Hooks() []Hook {
+	return c.hooks.User
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserClient) Interceptors() []Interceptor {
+	return c.inters.User
+}
+
+func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown User mutation op: %q", m.Op())
+	}
+}
+
 // WaveClient is a client for the Wave schema.
 type WaveClient struct {
 	config
@@ -1893,11 +2226,11 @@ func (c *WaveClient) mutate(ctx context.Context, m *WaveMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Agent, ContextEntry, Department, Document, Event, KnowledgeSpace, Message,
-		Organization, Role, Task, Team, Wave []ent.Hook
+		APIToken, Agent, ContextEntry, Department, Document, Event, KnowledgeSpace,
+		Message, Organization, Role, Task, Team, User, Wave []ent.Hook
 	}
 	inters struct {
-		Agent, ContextEntry, Department, Document, Event, KnowledgeSpace, Message,
-		Organization, Role, Task, Team, Wave []ent.Interceptor
+		APIToken, Agent, ContextEntry, Department, Document, Event, KnowledgeSpace,
+		Message, Organization, Role, Task, Team, User, Wave []ent.Interceptor
 	}
 )

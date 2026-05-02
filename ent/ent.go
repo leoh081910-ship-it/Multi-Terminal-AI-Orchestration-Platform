@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/apitoken"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/document"
@@ -23,6 +24,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 )
 
@@ -84,6 +86,7 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			apitoken.Table:       apitoken.ValidColumn,
 			agent.Table:          agent.ValidColumn,
 			contextentry.Table:   contextentry.ValidColumn,
 			department.Table:     department.ValidColumn,
@@ -95,6 +98,7 @@ func checkColumn(t, c string) error {
 			role.Table:           role.ValidColumn,
 			task.Table:           task.ValidColumn,
 			team.Table:           team.ValidColumn,
+			user.Table:           user.ValidColumn,
 			wave.Table:           wave.ValidColumn,
 		})
 	})

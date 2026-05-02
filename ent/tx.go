@@ -12,6 +12,8 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// APIToken is the client for interacting with the APIToken builders.
+	APIToken *APITokenClient
 	// Agent is the client for interacting with the Agent builders.
 	Agent *AgentClient
 	// ContextEntry is the client for interacting with the ContextEntry builders.
@@ -34,6 +36,8 @@ type Tx struct {
 	Task *TaskClient
 	// Team is the client for interacting with the Team builders.
 	Team *TeamClient
+	// User is the client for interacting with the User builders.
+	User *UserClient
 	// Wave is the client for interacting with the Wave builders.
 	Wave *WaveClient
 
@@ -167,6 +171,7 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.APIToken = NewAPITokenClient(tx.config)
 	tx.Agent = NewAgentClient(tx.config)
 	tx.ContextEntry = NewContextEntryClient(tx.config)
 	tx.Department = NewDepartmentClient(tx.config)
@@ -178,6 +183,7 @@ func (tx *Tx) init() {
 	tx.Role = NewRoleClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
 	tx.Team = NewTeamClient(tx.config)
+	tx.User = NewUserClient(tx.config)
 	tx.Wave = NewWaveClient(tx.config)
 }
 
@@ -188,7 +194,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Agent.QueryXXX(), the query will be executed
+// applies a query, for example: APIToken.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.
