@@ -239,7 +239,7 @@ func (s *Service) CreateRole(ctx context.Context, orgID, teamID string, input Cr
 		SetTeamID(teamID).
 		SetName(input.Name).
 		SetCapabilities(string(capsJSON)).
-		SetPermissions(string(permsJSON)).
+		SetLegacyPermissions(string(permsJSON)).
 		Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create role: %w", err)
@@ -429,7 +429,7 @@ func teamToView(t *ent.Team) *TeamView {
 func roleToView(r *ent.Role) *RoleView {
 	var caps, perms []string
 	json.Unmarshal([]byte(r.Capabilities), &caps)
-	json.Unmarshal([]byte(r.Permissions), &perms)
+	json.Unmarshal([]byte(r.LegacyPermissions), &perms)
 	return &RoleView{
 		ID:           r.ID,
 		OrgID:        r.OrgID,

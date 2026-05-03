@@ -19,13 +19,18 @@ func (Role) Fields() []ent.Field {
 		field.Text("id").
 			Unique().
 			Immutable(),
-		field.Text("org_id"),
-		field.Text("team_id"),
+		field.Text("org_id").
+			Optional(),
+		field.Text("team_id").
+			Optional(),
 		field.Text("name"),
+		field.Text("description").
+			Optional(),
 		field.Text("capabilities").
 			Default("[]"),
-		field.Text("permissions").
-			Default("[]"),
+		field.Text("legacy_permissions").
+			Default("[]").
+			StorageKey("permissions"),
 		field.Time("created_at").
 			Default(time.Now),
 	}
@@ -36,6 +41,7 @@ func (Role) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("users", User.Type).
 			Ref("roles"),
+		edge.To("permissions", Permission.Type),
 	}
 }
 
@@ -44,5 +50,6 @@ func (Role) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("org_id"),
 		index.Fields("team_id"),
+		index.Fields("name"),
 	}
 }

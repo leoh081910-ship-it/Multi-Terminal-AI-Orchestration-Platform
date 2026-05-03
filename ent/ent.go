@@ -21,6 +21,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/knowledgespace"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/message"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/organization"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/permission"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
@@ -95,6 +96,7 @@ func checkColumn(t, c string) error {
 			knowledgespace.Table: knowledgespace.ValidColumn,
 			message.Table:        message.ValidColumn,
 			organization.Table:   organization.ValidColumn,
+			permission.Table:     permission.ValidColumn,
 			role.Table:           role.ValidColumn,
 			task.Table:           task.ValidColumn,
 			team.Table:           team.ValidColumn,

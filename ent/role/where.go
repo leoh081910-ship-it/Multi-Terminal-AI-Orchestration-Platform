@@ -80,14 +80,19 @@ func Name(v string) predicate.Role {
 	return predicate.Role(sql.FieldEQ(FieldName, v))
 }
 
+// Description applies equality check predicate on the "description" field. It's identical to DescriptionEQ.
+func Description(v string) predicate.Role {
+	return predicate.Role(sql.FieldEQ(FieldDescription, v))
+}
+
 // Capabilities applies equality check predicate on the "capabilities" field. It's identical to CapabilitiesEQ.
 func Capabilities(v string) predicate.Role {
 	return predicate.Role(sql.FieldEQ(FieldCapabilities, v))
 }
 
-// Permissions applies equality check predicate on the "permissions" field. It's identical to PermissionsEQ.
-func Permissions(v string) predicate.Role {
-	return predicate.Role(sql.FieldEQ(FieldPermissions, v))
+// LegacyPermissions applies equality check predicate on the "legacy_permissions" field. It's identical to LegacyPermissionsEQ.
+func LegacyPermissions(v string) predicate.Role {
+	return predicate.Role(sql.FieldEQ(FieldLegacyPermissions, v))
 }
 
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
@@ -148,6 +153,16 @@ func OrgIDHasPrefix(v string) predicate.Role {
 // OrgIDHasSuffix applies the HasSuffix predicate on the "org_id" field.
 func OrgIDHasSuffix(v string) predicate.Role {
 	return predicate.Role(sql.FieldHasSuffix(FieldOrgID, v))
+}
+
+// OrgIDIsNil applies the IsNil predicate on the "org_id" field.
+func OrgIDIsNil() predicate.Role {
+	return predicate.Role(sql.FieldIsNull(FieldOrgID))
+}
+
+// OrgIDNotNil applies the NotNil predicate on the "org_id" field.
+func OrgIDNotNil() predicate.Role {
+	return predicate.Role(sql.FieldNotNull(FieldOrgID))
 }
 
 // OrgIDEqualFold applies the EqualFold predicate on the "org_id" field.
@@ -213,6 +228,16 @@ func TeamIDHasPrefix(v string) predicate.Role {
 // TeamIDHasSuffix applies the HasSuffix predicate on the "team_id" field.
 func TeamIDHasSuffix(v string) predicate.Role {
 	return predicate.Role(sql.FieldHasSuffix(FieldTeamID, v))
+}
+
+// TeamIDIsNil applies the IsNil predicate on the "team_id" field.
+func TeamIDIsNil() predicate.Role {
+	return predicate.Role(sql.FieldIsNull(FieldTeamID))
+}
+
+// TeamIDNotNil applies the NotNil predicate on the "team_id" field.
+func TeamIDNotNil() predicate.Role {
+	return predicate.Role(sql.FieldNotNull(FieldTeamID))
 }
 
 // TeamIDEqualFold applies the EqualFold predicate on the "team_id" field.
@@ -290,6 +315,81 @@ func NameContainsFold(v string) predicate.Role {
 	return predicate.Role(sql.FieldContainsFold(FieldName, v))
 }
 
+// DescriptionEQ applies the EQ predicate on the "description" field.
+func DescriptionEQ(v string) predicate.Role {
+	return predicate.Role(sql.FieldEQ(FieldDescription, v))
+}
+
+// DescriptionNEQ applies the NEQ predicate on the "description" field.
+func DescriptionNEQ(v string) predicate.Role {
+	return predicate.Role(sql.FieldNEQ(FieldDescription, v))
+}
+
+// DescriptionIn applies the In predicate on the "description" field.
+func DescriptionIn(vs ...string) predicate.Role {
+	return predicate.Role(sql.FieldIn(FieldDescription, vs...))
+}
+
+// DescriptionNotIn applies the NotIn predicate on the "description" field.
+func DescriptionNotIn(vs ...string) predicate.Role {
+	return predicate.Role(sql.FieldNotIn(FieldDescription, vs...))
+}
+
+// DescriptionGT applies the GT predicate on the "description" field.
+func DescriptionGT(v string) predicate.Role {
+	return predicate.Role(sql.FieldGT(FieldDescription, v))
+}
+
+// DescriptionGTE applies the GTE predicate on the "description" field.
+func DescriptionGTE(v string) predicate.Role {
+	return predicate.Role(sql.FieldGTE(FieldDescription, v))
+}
+
+// DescriptionLT applies the LT predicate on the "description" field.
+func DescriptionLT(v string) predicate.Role {
+	return predicate.Role(sql.FieldLT(FieldDescription, v))
+}
+
+// DescriptionLTE applies the LTE predicate on the "description" field.
+func DescriptionLTE(v string) predicate.Role {
+	return predicate.Role(sql.FieldLTE(FieldDescription, v))
+}
+
+// DescriptionContains applies the Contains predicate on the "description" field.
+func DescriptionContains(v string) predicate.Role {
+	return predicate.Role(sql.FieldContains(FieldDescription, v))
+}
+
+// DescriptionHasPrefix applies the HasPrefix predicate on the "description" field.
+func DescriptionHasPrefix(v string) predicate.Role {
+	return predicate.Role(sql.FieldHasPrefix(FieldDescription, v))
+}
+
+// DescriptionHasSuffix applies the HasSuffix predicate on the "description" field.
+func DescriptionHasSuffix(v string) predicate.Role {
+	return predicate.Role(sql.FieldHasSuffix(FieldDescription, v))
+}
+
+// DescriptionIsNil applies the IsNil predicate on the "description" field.
+func DescriptionIsNil() predicate.Role {
+	return predicate.Role(sql.FieldIsNull(FieldDescription))
+}
+
+// DescriptionNotNil applies the NotNil predicate on the "description" field.
+func DescriptionNotNil() predicate.Role {
+	return predicate.Role(sql.FieldNotNull(FieldDescription))
+}
+
+// DescriptionEqualFold applies the EqualFold predicate on the "description" field.
+func DescriptionEqualFold(v string) predicate.Role {
+	return predicate.Role(sql.FieldEqualFold(FieldDescription, v))
+}
+
+// DescriptionContainsFold applies the ContainsFold predicate on the "description" field.
+func DescriptionContainsFold(v string) predicate.Role {
+	return predicate.Role(sql.FieldContainsFold(FieldDescription, v))
+}
+
 // CapabilitiesEQ applies the EQ predicate on the "capabilities" field.
 func CapabilitiesEQ(v string) predicate.Role {
 	return predicate.Role(sql.FieldEQ(FieldCapabilities, v))
@@ -355,69 +455,69 @@ func CapabilitiesContainsFold(v string) predicate.Role {
 	return predicate.Role(sql.FieldContainsFold(FieldCapabilities, v))
 }
 
-// PermissionsEQ applies the EQ predicate on the "permissions" field.
-func PermissionsEQ(v string) predicate.Role {
-	return predicate.Role(sql.FieldEQ(FieldPermissions, v))
+// LegacyPermissionsEQ applies the EQ predicate on the "legacy_permissions" field.
+func LegacyPermissionsEQ(v string) predicate.Role {
+	return predicate.Role(sql.FieldEQ(FieldLegacyPermissions, v))
 }
 
-// PermissionsNEQ applies the NEQ predicate on the "permissions" field.
-func PermissionsNEQ(v string) predicate.Role {
-	return predicate.Role(sql.FieldNEQ(FieldPermissions, v))
+// LegacyPermissionsNEQ applies the NEQ predicate on the "legacy_permissions" field.
+func LegacyPermissionsNEQ(v string) predicate.Role {
+	return predicate.Role(sql.FieldNEQ(FieldLegacyPermissions, v))
 }
 
-// PermissionsIn applies the In predicate on the "permissions" field.
-func PermissionsIn(vs ...string) predicate.Role {
-	return predicate.Role(sql.FieldIn(FieldPermissions, vs...))
+// LegacyPermissionsIn applies the In predicate on the "legacy_permissions" field.
+func LegacyPermissionsIn(vs ...string) predicate.Role {
+	return predicate.Role(sql.FieldIn(FieldLegacyPermissions, vs...))
 }
 
-// PermissionsNotIn applies the NotIn predicate on the "permissions" field.
-func PermissionsNotIn(vs ...string) predicate.Role {
-	return predicate.Role(sql.FieldNotIn(FieldPermissions, vs...))
+// LegacyPermissionsNotIn applies the NotIn predicate on the "legacy_permissions" field.
+func LegacyPermissionsNotIn(vs ...string) predicate.Role {
+	return predicate.Role(sql.FieldNotIn(FieldLegacyPermissions, vs...))
 }
 
-// PermissionsGT applies the GT predicate on the "permissions" field.
-func PermissionsGT(v string) predicate.Role {
-	return predicate.Role(sql.FieldGT(FieldPermissions, v))
+// LegacyPermissionsGT applies the GT predicate on the "legacy_permissions" field.
+func LegacyPermissionsGT(v string) predicate.Role {
+	return predicate.Role(sql.FieldGT(FieldLegacyPermissions, v))
 }
 
-// PermissionsGTE applies the GTE predicate on the "permissions" field.
-func PermissionsGTE(v string) predicate.Role {
-	return predicate.Role(sql.FieldGTE(FieldPermissions, v))
+// LegacyPermissionsGTE applies the GTE predicate on the "legacy_permissions" field.
+func LegacyPermissionsGTE(v string) predicate.Role {
+	return predicate.Role(sql.FieldGTE(FieldLegacyPermissions, v))
 }
 
-// PermissionsLT applies the LT predicate on the "permissions" field.
-func PermissionsLT(v string) predicate.Role {
-	return predicate.Role(sql.FieldLT(FieldPermissions, v))
+// LegacyPermissionsLT applies the LT predicate on the "legacy_permissions" field.
+func LegacyPermissionsLT(v string) predicate.Role {
+	return predicate.Role(sql.FieldLT(FieldLegacyPermissions, v))
 }
 
-// PermissionsLTE applies the LTE predicate on the "permissions" field.
-func PermissionsLTE(v string) predicate.Role {
-	return predicate.Role(sql.FieldLTE(FieldPermissions, v))
+// LegacyPermissionsLTE applies the LTE predicate on the "legacy_permissions" field.
+func LegacyPermissionsLTE(v string) predicate.Role {
+	return predicate.Role(sql.FieldLTE(FieldLegacyPermissions, v))
 }
 
-// PermissionsContains applies the Contains predicate on the "permissions" field.
-func PermissionsContains(v string) predicate.Role {
-	return predicate.Role(sql.FieldContains(FieldPermissions, v))
+// LegacyPermissionsContains applies the Contains predicate on the "legacy_permissions" field.
+func LegacyPermissionsContains(v string) predicate.Role {
+	return predicate.Role(sql.FieldContains(FieldLegacyPermissions, v))
 }
 
-// PermissionsHasPrefix applies the HasPrefix predicate on the "permissions" field.
-func PermissionsHasPrefix(v string) predicate.Role {
-	return predicate.Role(sql.FieldHasPrefix(FieldPermissions, v))
+// LegacyPermissionsHasPrefix applies the HasPrefix predicate on the "legacy_permissions" field.
+func LegacyPermissionsHasPrefix(v string) predicate.Role {
+	return predicate.Role(sql.FieldHasPrefix(FieldLegacyPermissions, v))
 }
 
-// PermissionsHasSuffix applies the HasSuffix predicate on the "permissions" field.
-func PermissionsHasSuffix(v string) predicate.Role {
-	return predicate.Role(sql.FieldHasSuffix(FieldPermissions, v))
+// LegacyPermissionsHasSuffix applies the HasSuffix predicate on the "legacy_permissions" field.
+func LegacyPermissionsHasSuffix(v string) predicate.Role {
+	return predicate.Role(sql.FieldHasSuffix(FieldLegacyPermissions, v))
 }
 
-// PermissionsEqualFold applies the EqualFold predicate on the "permissions" field.
-func PermissionsEqualFold(v string) predicate.Role {
-	return predicate.Role(sql.FieldEqualFold(FieldPermissions, v))
+// LegacyPermissionsEqualFold applies the EqualFold predicate on the "legacy_permissions" field.
+func LegacyPermissionsEqualFold(v string) predicate.Role {
+	return predicate.Role(sql.FieldEqualFold(FieldLegacyPermissions, v))
 }
 
-// PermissionsContainsFold applies the ContainsFold predicate on the "permissions" field.
-func PermissionsContainsFold(v string) predicate.Role {
-	return predicate.Role(sql.FieldContainsFold(FieldPermissions, v))
+// LegacyPermissionsContainsFold applies the ContainsFold predicate on the "legacy_permissions" field.
+func LegacyPermissionsContainsFold(v string) predicate.Role {
+	return predicate.Role(sql.FieldContainsFold(FieldLegacyPermissions, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -475,6 +575,29 @@ func HasUsers() predicate.Role {
 func HasUsersWith(preds ...predicate.User) predicate.Role {
 	return predicate.Role(func(s *sql.Selector) {
 		step := newUsersStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasPermissions applies the HasEdge predicate on the "permissions" edge.
+func HasPermissions() predicate.Role {
+	return predicate.Role(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, PermissionsTable, PermissionsPrimaryKey...),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPermissionsWith applies the HasEdge predicate on the "permissions" edge with a given conditions (other predicates).
+func HasPermissionsWith(preds ...predicate.Permission) predicate.Role {
+	return predicate.Role(func(s *sql.Selector) {
+		step := newPermissionsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

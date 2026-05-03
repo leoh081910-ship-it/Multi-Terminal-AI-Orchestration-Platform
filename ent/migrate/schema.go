@@ -298,12 +298,40 @@ var (
 		Columns:    OrganizationsColumns,
 		PrimaryKey: []*schema.Column{OrganizationsColumns[0]},
 	}
+	// PermissionsColumns holds the columns for the "permissions" table.
+	PermissionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "name", Type: field.TypeString, Unique: true},
+		{Name: "resource", Type: field.TypeString},
+		{Name: "action", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// PermissionsTable holds the schema information for the "permissions" table.
+	PermissionsTable = &schema.Table{
+		Name:       "permissions",
+		Columns:    PermissionsColumns,
+		PrimaryKey: []*schema.Column{PermissionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "permission_resource_action",
+				Unique:  true,
+				Columns: []*schema.Column{PermissionsColumns[2], PermissionsColumns[3]},
+			},
+			{
+				Name:    "permission_name",
+				Unique:  false,
+				Columns: []*schema.Column{PermissionsColumns[1]},
+			},
+		},
+	}
 	// RolesColumns holds the columns for the "roles" table.
 	RolesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
-		{Name: "org_id", Type: field.TypeString, Size: 2147483647},
-		{Name: "team_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "org_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "team_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "name", Type: field.TypeString, Size: 2147483647},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "capabilities", Type: field.TypeString, Size: 2147483647, Default: "[]"},
 		{Name: "permissions", Type: field.TypeString, Size: 2147483647, Default: "[]"},
 		{Name: "created_at", Type: field.TypeTime},
@@ -323,6 +351,11 @@ var (
 				Name:    "role_team_id",
 				Unique:  false,
 				Columns: []*schema.Column{RolesColumns[2]},
+			},
+			{
+				Name:    "role_name",
+				Unique:  false,
+				Columns: []*schema.Column{RolesColumns[3]},
 			},
 		},
 	}
@@ -495,6 +528,31 @@ var (
 			},
 		},
 	}
+	// RolePermissionsColumns holds the columns for the "role_permissions" table.
+	RolePermissionsColumns = []*schema.Column{
+		{Name: "role_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "permission_id", Type: field.TypeString},
+	}
+	// RolePermissionsTable holds the schema information for the "role_permissions" table.
+	RolePermissionsTable = &schema.Table{
+		Name:       "role_permissions",
+		Columns:    RolePermissionsColumns,
+		PrimaryKey: []*schema.Column{RolePermissionsColumns[0], RolePermissionsColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "role_permissions_role_id",
+				Columns:    []*schema.Column{RolePermissionsColumns[0]},
+				RefColumns: []*schema.Column{RolesColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "role_permissions_permission_id",
+				Columns:    []*schema.Column{RolePermissionsColumns[1]},
+				RefColumns: []*schema.Column{PermissionsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
 	// UserRolesColumns holds the columns for the "user_roles" table.
 	UserRolesColumns = []*schema.Column{
 		{Name: "user_id", Type: field.TypeString},
@@ -531,17 +589,21 @@ var (
 		KnowledgeSpacesTable,
 		MessagesTable,
 		OrganizationsTable,
+		PermissionsTable,
 		RolesTable,
 		TasksTable,
 		TeamsTable,
 		UsersTable,
 		WavesTable,
+		RolePermissionsTable,
 		UserRolesTable,
 	}
 )
 
 func init() {
 	APITokensTable.ForeignKeys[0].RefTable = UsersTable
+	RolePermissionsTable.ForeignKeys[0].RefTable = RolesTable
+	RolePermissionsTable.ForeignKeys[1].RefTable = PermissionsTable
 	UserRolesTable.ForeignKeys[0].RefTable = UsersTable
 	UserRolesTable.ForeignKeys[1].RefTable = RolesTable
 }

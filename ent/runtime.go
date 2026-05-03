@@ -14,6 +14,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/knowledgespace"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/message"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/organization"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/permission"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/schema"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
@@ -124,18 +125,24 @@ func init() {
 	organizationDescCreatedAt := organizationFields[3].Descriptor()
 	// organization.DefaultCreatedAt holds the default value on creation for the created_at field.
 	organization.DefaultCreatedAt = organizationDescCreatedAt.Default.(func() time.Time)
+	permissionFields := schema.Permission{}.Fields()
+	_ = permissionFields
+	// permissionDescCreatedAt is the schema descriptor for created_at field.
+	permissionDescCreatedAt := permissionFields[5].Descriptor()
+	// permission.DefaultCreatedAt holds the default value on creation for the created_at field.
+	permission.DefaultCreatedAt = permissionDescCreatedAt.Default.(func() time.Time)
 	roleFields := schema.Role{}.Fields()
 	_ = roleFields
 	// roleDescCapabilities is the schema descriptor for capabilities field.
-	roleDescCapabilities := roleFields[4].Descriptor()
+	roleDescCapabilities := roleFields[5].Descriptor()
 	// role.DefaultCapabilities holds the default value on creation for the capabilities field.
 	role.DefaultCapabilities = roleDescCapabilities.Default.(string)
-	// roleDescPermissions is the schema descriptor for permissions field.
-	roleDescPermissions := roleFields[5].Descriptor()
-	// role.DefaultPermissions holds the default value on creation for the permissions field.
-	role.DefaultPermissions = roleDescPermissions.Default.(string)
+	// roleDescLegacyPermissions is the schema descriptor for legacy_permissions field.
+	roleDescLegacyPermissions := roleFields[6].Descriptor()
+	// role.DefaultLegacyPermissions holds the default value on creation for the legacy_permissions field.
+	role.DefaultLegacyPermissions = roleDescLegacyPermissions.Default.(string)
 	// roleDescCreatedAt is the schema descriptor for created_at field.
-	roleDescCreatedAt := roleFields[6].Descriptor()
+	roleDescCreatedAt := roleFields[7].Descriptor()
 	// role.DefaultCreatedAt holds the default value on creation for the created_at field.
 	role.DefaultCreatedAt = roleDescCreatedAt.Default.(func() time.Time)
 	taskFields := schema.Task{}.Fields()

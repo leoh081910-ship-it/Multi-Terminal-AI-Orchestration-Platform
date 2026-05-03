@@ -30,6 +30,8 @@ type Tx struct {
 	Message *MessageClient
 	// Organization is the client for interacting with the Organization builders.
 	Organization *OrganizationClient
+	// Permission is the client for interacting with the Permission builders.
+	Permission *PermissionClient
 	// Role is the client for interacting with the Role builders.
 	Role *RoleClient
 	// Task is the client for interacting with the Task builders.
@@ -180,6 +182,7 @@ func (tx *Tx) init() {
 	tx.KnowledgeSpace = NewKnowledgeSpaceClient(tx.config)
 	tx.Message = NewMessageClient(tx.config)
 	tx.Organization = NewOrganizationClient(tx.config)
+	tx.Permission = NewPermissionClient(tx.config)
 	tx.Role = NewRoleClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
 	tx.Team = NewTeamClient(tx.config)

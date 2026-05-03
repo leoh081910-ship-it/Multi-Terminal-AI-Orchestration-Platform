@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/permission"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 )
@@ -27,15 +28,45 @@ func (_c *RoleCreate) SetOrgID(v string) *RoleCreate {
 	return _c
 }
 
+// SetNillableOrgID sets the "org_id" field if the given value is not nil.
+func (_c *RoleCreate) SetNillableOrgID(v *string) *RoleCreate {
+	if v != nil {
+		_c.SetOrgID(*v)
+	}
+	return _c
+}
+
 // SetTeamID sets the "team_id" field.
 func (_c *RoleCreate) SetTeamID(v string) *RoleCreate {
 	_c.mutation.SetTeamID(v)
 	return _c
 }
 
+// SetNillableTeamID sets the "team_id" field if the given value is not nil.
+func (_c *RoleCreate) SetNillableTeamID(v *string) *RoleCreate {
+	if v != nil {
+		_c.SetTeamID(*v)
+	}
+	return _c
+}
+
 // SetName sets the "name" field.
 func (_c *RoleCreate) SetName(v string) *RoleCreate {
 	_c.mutation.SetName(v)
+	return _c
+}
+
+// SetDescription sets the "description" field.
+func (_c *RoleCreate) SetDescription(v string) *RoleCreate {
+	_c.mutation.SetDescription(v)
+	return _c
+}
+
+// SetNillableDescription sets the "description" field if the given value is not nil.
+func (_c *RoleCreate) SetNillableDescription(v *string) *RoleCreate {
+	if v != nil {
+		_c.SetDescription(*v)
+	}
 	return _c
 }
 
@@ -53,16 +84,16 @@ func (_c *RoleCreate) SetNillableCapabilities(v *string) *RoleCreate {
 	return _c
 }
 
-// SetPermissions sets the "permissions" field.
-func (_c *RoleCreate) SetPermissions(v string) *RoleCreate {
-	_c.mutation.SetPermissions(v)
+// SetLegacyPermissions sets the "legacy_permissions" field.
+func (_c *RoleCreate) SetLegacyPermissions(v string) *RoleCreate {
+	_c.mutation.SetLegacyPermissions(v)
 	return _c
 }
 
-// SetNillablePermissions sets the "permissions" field if the given value is not nil.
-func (_c *RoleCreate) SetNillablePermissions(v *string) *RoleCreate {
+// SetNillableLegacyPermissions sets the "legacy_permissions" field if the given value is not nil.
+func (_c *RoleCreate) SetNillableLegacyPermissions(v *string) *RoleCreate {
 	if v != nil {
-		_c.SetPermissions(*v)
+		_c.SetLegacyPermissions(*v)
 	}
 	return _c
 }
@@ -100,6 +131,21 @@ func (_c *RoleCreate) AddUsers(v ...*User) *RoleCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddUserIDs(ids...)
+}
+
+// AddPermissionIDs adds the "permissions" edge to the Permission entity by IDs.
+func (_c *RoleCreate) AddPermissionIDs(ids ...string) *RoleCreate {
+	_c.mutation.AddPermissionIDs(ids...)
+	return _c
+}
+
+// AddPermissions adds the "permissions" edges to the Permission entity.
+func (_c *RoleCreate) AddPermissions(v ...*Permission) *RoleCreate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddPermissionIDs(ids...)
 }
 
 // Mutation returns the RoleMutation object of the builder.
@@ -141,9 +187,9 @@ func (_c *RoleCreate) defaults() {
 		v := role.DefaultCapabilities
 		_c.mutation.SetCapabilities(v)
 	}
-	if _, ok := _c.mutation.Permissions(); !ok {
-		v := role.DefaultPermissions
-		_c.mutation.SetPermissions(v)
+	if _, ok := _c.mutation.LegacyPermissions(); !ok {
+		v := role.DefaultLegacyPermissions
+		_c.mutation.SetLegacyPermissions(v)
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := role.DefaultCreatedAt()
@@ -153,20 +199,14 @@ func (_c *RoleCreate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_c *RoleCreate) check() error {
-	if _, ok := _c.mutation.OrgID(); !ok {
-		return &ValidationError{Name: "org_id", err: errors.New(`ent: missing required field "Role.org_id"`)}
-	}
-	if _, ok := _c.mutation.TeamID(); !ok {
-		return &ValidationError{Name: "team_id", err: errors.New(`ent: missing required field "Role.team_id"`)}
-	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "Role.name"`)}
 	}
 	if _, ok := _c.mutation.Capabilities(); !ok {
 		return &ValidationError{Name: "capabilities", err: errors.New(`ent: missing required field "Role.capabilities"`)}
 	}
-	if _, ok := _c.mutation.Permissions(); !ok {
-		return &ValidationError{Name: "permissions", err: errors.New(`ent: missing required field "Role.permissions"`)}
+	if _, ok := _c.mutation.LegacyPermissions(); !ok {
+		return &ValidationError{Name: "legacy_permissions", err: errors.New(`ent: missing required field "Role.legacy_permissions"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Role.created_at"`)}
@@ -218,13 +258,17 @@ func (_c *RoleCreate) createSpec() (*Role, *sqlgraph.CreateSpec) {
 		_spec.SetField(role.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
+	if value, ok := _c.mutation.Description(); ok {
+		_spec.SetField(role.FieldDescription, field.TypeString, value)
+		_node.Description = value
+	}
 	if value, ok := _c.mutation.Capabilities(); ok {
 		_spec.SetField(role.FieldCapabilities, field.TypeString, value)
 		_node.Capabilities = value
 	}
-	if value, ok := _c.mutation.Permissions(); ok {
-		_spec.SetField(role.FieldPermissions, field.TypeString, value)
-		_node.Permissions = value
+	if value, ok := _c.mutation.LegacyPermissions(); ok {
+		_spec.SetField(role.FieldLegacyPermissions, field.TypeString, value)
+		_node.LegacyPermissions = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(role.FieldCreatedAt, field.TypeTime, value)
@@ -239,6 +283,22 @@ func (_c *RoleCreate) createSpec() (*Role, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.PermissionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   role.PermissionsTable,
+			Columns: role.PermissionsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(permission.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

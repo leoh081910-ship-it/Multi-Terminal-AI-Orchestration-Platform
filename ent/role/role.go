@@ -20,14 +20,18 @@ const (
 	FieldTeamID = "team_id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
+	// FieldDescription holds the string denoting the description field in the database.
+	FieldDescription = "description"
 	// FieldCapabilities holds the string denoting the capabilities field in the database.
 	FieldCapabilities = "capabilities"
-	// FieldPermissions holds the string denoting the permissions field in the database.
-	FieldPermissions = "permissions"
+	// FieldLegacyPermissions holds the string denoting the legacy_permissions field in the database.
+	FieldLegacyPermissions = "permissions"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeUsers holds the string denoting the users edge name in mutations.
 	EdgeUsers = "users"
+	// EdgePermissions holds the string denoting the permissions edge name in mutations.
+	EdgePermissions = "permissions"
 	// Table holds the table name of the role in the database.
 	Table = "roles"
 	// UsersTable is the table that holds the users relation/edge. The primary key declared below.
@@ -35,6 +39,11 @@ const (
 	// UsersInverseTable is the table name for the User entity.
 	// It exists in this package in order to avoid circular dependency with the "user" package.
 	UsersInverseTable = "users"
+	// PermissionsTable is the table that holds the permissions relation/edge. The primary key declared below.
+	PermissionsTable = "role_permissions"
+	// PermissionsInverseTable is the table name for the Permission entity.
+	// It exists in this package in order to avoid circular dependency with the "permission" package.
+	PermissionsInverseTable = "permissions"
 )
 
 // Columns holds all SQL columns for role fields.
@@ -43,8 +52,9 @@ var Columns = []string{
 	FieldOrgID,
 	FieldTeamID,
 	FieldName,
+	FieldDescription,
 	FieldCapabilities,
-	FieldPermissions,
+	FieldLegacyPermissions,
 	FieldCreatedAt,
 }
 
@@ -52,6 +62,9 @@ var (
 	// UsersPrimaryKey and UsersColumn2 are the table columns denoting the
 	// primary key for the users relation (M2M).
 	UsersPrimaryKey = []string{"user_id", "role_id"}
+	// PermissionsPrimaryKey and PermissionsColumn2 are the table columns denoting the
+	// primary key for the permissions relation (M2M).
+	PermissionsPrimaryKey = []string{"role_id", "permission_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -67,8 +80,8 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultCapabilities holds the default value on creation for the "capabilities" field.
 	DefaultCapabilities string
-	// DefaultPermissions holds the default value on creation for the "permissions" field.
-	DefaultPermissions string
+	// DefaultLegacyPermissions holds the default value on creation for the "legacy_permissions" field.
+	DefaultLegacyPermissions string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -96,14 +109,19 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
 }
 
+// ByDescription orders the results by the description field.
+func ByDescription(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDescription, opts...).ToFunc()
+}
+
 // ByCapabilities orders the results by the capabilities field.
 func ByCapabilities(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCapabilities, opts...).ToFunc()
 }
 
-// ByPermissions orders the results by the permissions field.
-func ByPermissions(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPermissions, opts...).ToFunc()
+// ByLegacyPermissions orders the results by the legacy_permissions field.
+func ByLegacyPermissions(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLegacyPermissions, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.
@@ -124,10 +142,31 @@ func ByUsers(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUsersStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByPermissionsCount orders the results by permissions count.
+func ByPermissionsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPermissionsStep(), opts...)
+	}
+}
+
+// ByPermissions orders the results by permissions terms.
+func ByPermissions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPermissionsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newUsersStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UsersInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, true, UsersTable, UsersPrimaryKey...),
+	)
+}
+func newPermissionsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PermissionsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, false, PermissionsTable, PermissionsPrimaryKey...),
 	)
 }

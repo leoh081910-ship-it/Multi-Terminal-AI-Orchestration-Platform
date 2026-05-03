@@ -133,6 +133,16 @@ func main() {
 	tokenHandler := server.NewTokenHandler(tokenService)
 	log.Info().Msg("Authentication system initialized")
 
+	// Initialize RBAC permission system
+	permService := auth.NewPermissionService(client)
+	rbacMiddleware := auth.NewRBACMiddleware(client, authMiddleware)
+	if err := permService.SeedDefaultRoles(ctx); err != nil {
+		log.Error().Err(err).Msg("failed to seed default roles (non-fatal)")
+	} else {
+		log.Info().Msg("RBAC system initialized with default roles and permissions")
+	}
+	_ = rbacMiddleware // Available for future endpoint protection
+
 	// Phase 5: Initialize intelligent router
 	routingCfg := router.Config{
 		Strategy: router.Strategy(viper.GetString("routing.strategy")),

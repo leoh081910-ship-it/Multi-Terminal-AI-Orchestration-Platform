@@ -23,10 +23,12 @@ type Role struct {
 	TeamID string `json:"team_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
+	// Description holds the value of the "description" field.
+	Description string `json:"description,omitempty"`
 	// Capabilities holds the value of the "capabilities" field.
 	Capabilities string `json:"capabilities,omitempty"`
-	// Permissions holds the value of the "permissions" field.
-	Permissions string `json:"permissions,omitempty"`
+	// LegacyPermissions holds the value of the "legacy_permissions" field.
+	LegacyPermissions string `json:"legacy_permissions,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -39,9 +41,11 @@ type Role struct {
 type RoleEdges struct {
 	// Users holds the value of the users edge.
 	Users []*User `json:"users,omitempty"`
+	// Permissions holds the value of the permissions edge.
+	Permissions []*Permission `json:"permissions,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // UsersOrErr returns the Users value or an error if the edge
@@ -53,12 +57,21 @@ func (e RoleEdges) UsersOrErr() ([]*User, error) {
 	return nil, &NotLoadedError{edge: "users"}
 }
 
+// PermissionsOrErr returns the Permissions value or an error if the edge
+// was not loaded in eager-loading.
+func (e RoleEdges) PermissionsOrErr() ([]*Permission, error) {
+	if e.loadedTypes[1] {
+		return e.Permissions, nil
+	}
+	return nil, &NotLoadedError{edge: "permissions"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Role) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case role.FieldID, role.FieldOrgID, role.FieldTeamID, role.FieldName, role.FieldCapabilities, role.FieldPermissions:
+		case role.FieldID, role.FieldOrgID, role.FieldTeamID, role.FieldName, role.FieldDescription, role.FieldCapabilities, role.FieldLegacyPermissions:
 			values[i] = new(sql.NullString)
 		case role.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -101,17 +114,23 @@ func (_m *Role) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Name = value.String
 			}
+		case role.FieldDescription:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field description", values[i])
+			} else if value.Valid {
+				_m.Description = value.String
+			}
 		case role.FieldCapabilities:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field capabilities", values[i])
 			} else if value.Valid {
 				_m.Capabilities = value.String
 			}
-		case role.FieldPermissions:
+		case role.FieldLegacyPermissions:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field permissions", values[i])
+				return fmt.Errorf("unexpected type %T for field legacy_permissions", values[i])
 			} else if value.Valid {
-				_m.Permissions = value.String
+				_m.LegacyPermissions = value.String
 			}
 		case role.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -135,6 +154,11 @@ func (_m *Role) Value(name string) (ent.Value, error) {
 // QueryUsers queries the "users" edge of the Role entity.
 func (_m *Role) QueryUsers() *UserQuery {
 	return NewRoleClient(_m.config).QueryUsers(_m)
+}
+
+// QueryPermissions queries the "permissions" edge of the Role entity.
+func (_m *Role) QueryPermissions() *PermissionQuery {
+	return NewRoleClient(_m.config).QueryPermissions(_m)
 }
 
 // Update returns a builder for updating this Role.
@@ -169,11 +193,14 @@ func (_m *Role) String() string {
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
+	builder.WriteString("description=")
+	builder.WriteString(_m.Description)
+	builder.WriteString(", ")
 	builder.WriteString("capabilities=")
 	builder.WriteString(_m.Capabilities)
 	builder.WriteString(", ")
-	builder.WriteString("permissions=")
-	builder.WriteString(_m.Permissions)
+	builder.WriteString("legacy_permissions=")
+	builder.WriteString(_m.LegacyPermissions)
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
