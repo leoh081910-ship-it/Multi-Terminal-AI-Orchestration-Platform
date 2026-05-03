@@ -10,6 +10,7 @@ import AgentWorkbenchPage from './pages/AgentWorkbenchPage';
 import SwimLanePage from './pages/SwimLanePage';
 import OrganizationPage from './pages/OrganizationPage';
 import KnowledgeSpacePage from './pages/KnowledgeSpacePage';
+import TaskDetailPage from './pages/TaskDetailPage';
 import './styles/global.css';
 
 const queryClient = new QueryClient({
@@ -36,6 +37,7 @@ function App() {
               <Route path="swimlane" element={<SwimLanePage />} />
               <Route path="org" element={<OrganizationPage />} />
               <Route path="knowledge" element={<KnowledgeSpacePage />} />
+              <Route path="tasks/:taskId" element={<TaskDetailPage />} />
               <Route path="*" element={<OrchestratorHome />} />
             </Route>
           </Routes>
