@@ -1,6 +1,6 @@
 module github.com/mCP-DevOS/ai-orchestration-platform
 
-go 1.24
+go 1.25.0
 
 require (
 	entgo.io/ent v0.14.6
@@ -19,9 +19,12 @@ require (
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/bmatcuk/doublestar v1.3.4 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
+	github.com/getsentry/sentry-go v0.46.1 // indirect
+	github.com/getsentry/sentry-go/zerolog v0.46.1 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect

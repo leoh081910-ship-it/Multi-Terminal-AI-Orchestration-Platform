@@ -22,6 +22,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
 	"github.com/rs/zerolog"
 )
 
@@ -94,10 +95,30 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) setupMiddleware() {
 	s.router.Use(s.cors)
 	s.router.Use(middleware.RequestID)
+	s.router.Use(s.injectRequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(30 * time.Second))
 	s.router.Use(s.requestLogger)
+}
+
+// EnableSentryMiddleware adds Sentry request tracking middleware.
+// Must be called before the server starts listening.
+func (s *Server) EnableSentryMiddleware() {
+	s.router.Use(telemetry.SentryMiddleware)
+}
+
+func (s *Server) injectRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rid := middleware.GetReqID(r.Context())
+		if rid == "" {
+			rid = telemetry.NewRequestID()
+		}
+		ctx := telemetry.WithRequestID(r.Context(), rid)
+		reqLogger := telemetry.LoggerWithContext(s.logger, ctx)
+		ctx = telemetry.ContextWithLogger(ctx, reqLogger)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 func (s *Server) requestLogger(next http.Handler) http.Handler {
@@ -105,11 +126,16 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
-		s.logger.Info().
+		logger := telemetry.FromContext(r.Context())
+		if logger.GetLevel() == zerolog.Disabled {
+			logger = s.logger
+		}
+		logger.Info().
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
 			Int("status", ww.Status()).
 			Dur("duration", time.Since(start)).
+			Str("remote_addr", r.RemoteAddr).
 			Msg("request")
 	})
 }

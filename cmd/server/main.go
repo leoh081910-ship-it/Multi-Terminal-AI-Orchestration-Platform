@@ -28,6 +28,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/server"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 )
 
@@ -87,10 +88,24 @@ func main() {
 	viper.SetDefault("backup.dir", "backups")
 	viper.SetDefault("backup.max_keep", 24)
 	viper.SetDefault("backup.interval_minutes", 60)
+	viper.SetDefault("sentry.dsn", "")
+	viper.SetDefault("sentry.environment", "development")
+	viper.SetDefault("sentry.traces_sample_rate", 0.1)
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Warn().Err(err).Msg("config file not found, using defaults")
 	}
+
+	// Initialize Sentry (no-op if DSN is empty)
+	if err := telemetry.InitSentry(telemetry.SentryConfig{
+		DSN:              viper.GetString("sentry.dsn"),
+		Environment:      viper.GetString("sentry.environment"),
+		Release:          "ai-orchestration-platform@v2.1",
+		TracesSampleRate: viper.GetFloat64("sentry.traces_sample_rate"),
+	}, log.Logger); err != nil {
+		log.Warn().Err(err).Msg("sentry initialization failed (non-fatal)")
+	}
+	defer telemetry.FlushSentry()
 
 	dbPath := viper.GetString("database.path")
 	host := viper.GetString("server.host")
@@ -130,6 +145,12 @@ func main() {
 	repo := store.NewRepository(client, &log.Logger)
 	srv := server.New(repo, log.Logger)
 	srv.SetWebDistDir(viper.GetString("web.dist_dir"))
+
+	// Enable Sentry middleware if DSN is configured
+	if viper.GetString("sentry.dsn") != "" {
+		srv.EnableSentryMiddleware()
+		log.Info().Msg("Sentry middleware enabled")
+	}
 
 	// Initialize authentication
 	tokenRepo := auth.NewEntTokenRepository(client)
