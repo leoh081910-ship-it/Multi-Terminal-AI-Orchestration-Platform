@@ -159,6 +159,15 @@ func main() {
 	tokenHandler := server.NewTokenHandler(tokenService)
 	log.Info().Msg("Authentication system initialized")
 
+	// Wire WebSocket authentication
+	srv.SetWSAuth(func(token string) (string, bool) {
+		t, err := tokenService.ValidateToken(context.Background(), token)
+		if err != nil {
+			return "", false
+		}
+		return t.UserID, true
+	})
+
 	// Initialize RBAC permission system
 	permService := auth.NewPermissionService(client)
 	rbacMiddleware := auth.NewRBACMiddleware(client, authMiddleware)

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,9 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
+// WSAuthFunc validates a token string and returns (userID, ok).
+type WSAuthFunc func(token string) (userID string, ok bool)
+
 // WSHub manages WebSocket connections and broadcasts events.
 type WSHub struct {
 	mu         sync.RWMutex
@@ -24,6 +28,7 @@ type WSHub struct {
 	register   chan *WSClient
 	unregister chan *WSClient
 	logger     zerolog.Logger
+	authFn     WSAuthFunc
 }
 
 // WSClient represents a single WebSocket connection.
@@ -51,6 +56,11 @@ func NewWSHub(logger zerolog.Logger) *WSHub {
 		unregister: make(chan *WSClient),
 		logger:     logger,
 	}
+}
+
+// SetAuthFunc sets the authentication function for WebSocket connections.
+func (h *WSHub) SetAuthFunc(fn WSAuthFunc) {
+	h.authFn = fn
 }
 
 // Run starts the hub's event loop.
@@ -108,6 +118,18 @@ func (h *WSHub) ClientCount() int {
 
 // HandleWebSocket upgrades an HTTP connection to WebSocket.
 func (h *WSHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Authentication check
+	if h.authFn != nil {
+		token := extractWSToken(r)
+		if token == "" {
+			http.Error(w, "missing authentication token", http.StatusUnauthorized)
+			return
+		}
+		if _, ok := h.authFn(token); !ok {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.Error().Err(err).Msg("websocket upgrade failed")
@@ -193,4 +215,24 @@ func (h *WSHub) ConnectEventBus(bus *EventBus) {
 // RegisterWSRoutes registers the WebSocket endpoint.
 func (s *Server) registerWSRoutes(r chi.Router) {
 	r.Get("/ws", s.wsHub.HandleWebSocket)
+}
+
+// extractWSToken gets the auth token from query param or Sec-WebSocket-Protocol header.
+func extractWSToken(r *http.Request) string {
+	if t := r.URL.Query().Get("token"); t != "" {
+		return t
+	}
+	if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
+		for _, p := range strings.Split(proto, ",") {
+			p = strings.TrimSpace(p)
+			if strings.HasPrefix(p, "bearer.") {
+				return strings.TrimPrefix(p, "bearer.")
+			}
+		}
+	}
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimPrefix(auth, "Bearer ")
+	}
+	return ""
 }

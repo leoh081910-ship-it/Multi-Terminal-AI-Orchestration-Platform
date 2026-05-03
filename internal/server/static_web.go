@@ -14,6 +14,11 @@ func (s *Server) SetWebDistDir(dir string) {
 	s.webDistDir = filepath.FromSlash(dir)
 }
 
+// SetWSAuth configures the WebSocket hub authentication function.
+func (s *Server) SetWSAuth(fn WSAuthFunc) {
+	s.wsHub.SetAuthFunc(fn)
+}
+
 func (s *Server) registerStaticWebRoutes() {
 	dist := filepath.Clean(s.webDistDir)
 	if dist == "." || dist == "" {

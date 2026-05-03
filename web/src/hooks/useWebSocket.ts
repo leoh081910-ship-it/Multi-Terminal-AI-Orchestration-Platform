@@ -8,7 +8,15 @@ export interface WSMessage {
   timestamp: string;
 }
 
-const WS_URL = (import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/v1/ws').replace(/\/$/, '');
+const WS_URL = (import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws').replace(/\/$/, '');
+
+function getAuthToken(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)auth_token=([^;]*)/);
+  if (match) return match[1];
+  const stored = localStorage.getItem('auth_token');
+  if (stored) return stored;
+  return null;
+}
 
 export function useWebSocket(projectId?: string) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -27,8 +35,13 @@ export function useWebSocket(projectId?: string) {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const url = projectId ? `${WS_URL}?project=${encodeURIComponent(projectId)}` : WS_URL;
-    const ws = new WebSocket(url);
+    const token = getAuthToken();
+    const params = new URLSearchParams();
+    if (projectId) params.set('project', projectId);
+    if (token) params.set('token', token);
+
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const ws = new WebSocket(`${WS_URL}${qs}`);
 
     ws.onopen = () => {
       setConnected(true);
