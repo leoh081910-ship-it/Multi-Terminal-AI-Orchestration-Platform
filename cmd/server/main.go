@@ -23,6 +23,7 @@ import (
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/migrate"
+	_ "github.com/mCP-DevOS/ai-orchestration-platform/docs"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/auth"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/backup"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
@@ -38,6 +39,15 @@ type projectRuntimeCommandConfig struct {
 }
 
 const defaultProjectID = "default"
+
+// @title AI Orchestration Platform API
+// @version 2.1
+// @description Multi-terminal AI orchestration platform for task scheduling, agent management, and intelligent routing.
+// @host localhost:8080
+// @BasePath /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 
 type projectConfigFile struct {
 	ID            string                      `mapstructure:"id"`

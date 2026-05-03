@@ -33,6 +33,12 @@ func (s *Server) RegisterBackupRoutes(r chi.Router, h *BackupHandler, authMiddle
 	})
 }
 
+// @Summary List all backups
+// @Tags backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} APIResponse
+// @Router /system/backups [get]
 func (h *BackupHandler) list(w http.ResponseWriter, r *http.Request) {
 	backups, err := h.svc.ListBackups()
 	if err != nil {
@@ -42,6 +48,12 @@ func (h *BackupHandler) list(w http.ResponseWriter, r *http.Request) {
 	writeBackupJSON(w, http.StatusOK, APIResponse{Success: true, Data: backups})
 }
 
+// @Summary Create a manual backup
+// @Tags backup
+// @Produce json
+// @Security BearerAuth
+// @Success 201 {object} APIResponse
+// @Router /system/backups [post]
 func (h *BackupHandler) create(w http.ResponseWriter, r *http.Request) {
 	info, err := h.svc.CreateBackup(r.Context())
 	if err != nil {
@@ -51,10 +63,23 @@ func (h *BackupHandler) create(w http.ResponseWriter, r *http.Request) {
 	writeBackupJSON(w, http.StatusCreated, APIResponse{Success: true, Data: info})
 }
 
+// @Summary Get backup statistics
+// @Tags backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} APIResponse
+// @Router /system/backups/stats [get]
 func (h *BackupHandler) stats(w http.ResponseWriter, r *http.Request) {
 	writeBackupJSON(w, http.StatusOK, APIResponse{Success: true, Data: h.svc.Stats()})
 }
 
+// @Summary Verify a backup checksum
+// @Tags backup
+// @Produce json
+// @Security BearerAuth
+// @Param filename path string true "Backup filename"
+// @Success 200 {object} APIResponse
+// @Router /system/backups/{filename}/verify [post]
 func (h *BackupHandler) verify(w http.ResponseWriter, r *http.Request) {
 	filename := chi.URLParam(r, "filename")
 	checksum, err := h.svc.VerifyBackup(filename)
@@ -68,6 +93,13 @@ func (h *BackupHandler) verify(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Restore from a backup
+// @Tags backup
+// @Produce json
+// @Security BearerAuth
+// @Param filename path string true "Backup filename"
+// @Success 200 {object} APIResponse
+// @Router /system/backups/{filename}/restore [post]
 func (h *BackupHandler) restore(w http.ResponseWriter, r *http.Request) {
 	filename := chi.URLParam(r, "filename")
 	if err := h.svc.RestoreBackup(filename); err != nil {

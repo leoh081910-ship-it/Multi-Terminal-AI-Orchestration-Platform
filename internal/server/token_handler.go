@@ -44,6 +44,16 @@ type TokenResponse struct {
 }
 
 // CreateToken handles POST /api/v1/auth/tokens
+// @Summary Create a new API token
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateTokenRequest true "Token configuration"
+// @Success 201 {object} TokenResponse
+// @Failure 400 {object} APIResponse
+// @Failure 401 {object} APIResponse
+// @Router /auth/tokens [post]
 func (h *TokenHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context
 	userID, ok := auth.GetUserIDFromContext(r.Context())
@@ -105,6 +115,13 @@ func (h *TokenHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListTokens handles GET /api/v1/auth/tokens
+// @Summary List user API tokens
+// @Tags auth
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} TokenResponse
+// @Failure 401 {object} APIResponse
+// @Router /auth/tokens [get]
 func (h *TokenHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context
 	userID, ok := auth.GetUserIDFromContext(r.Context())
@@ -141,6 +158,15 @@ func (h *TokenHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 // RevokeToken handles POST /api/v1/auth/tokens/{id}/revoke
+// @Summary Revoke an API token
+// @Tags auth
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Token ID"
+// @Success 200 {object} APIResponse
+// @Failure 400 {object} APIResponse
+// @Failure 401 {object} APIResponse
+// @Router /auth/tokens/{id}/revoke [post]
 func (h *TokenHandler) RevokeToken(w http.ResponseWriter, r *http.Request) {
 	tokenID := chi.URLParam(r, "id")
 	if tokenID == "" {
@@ -164,6 +190,15 @@ func (h *TokenHandler) RevokeToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteToken handles DELETE /api/v1/auth/tokens/{id}
+// @Summary Delete an API token
+// @Tags auth
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Token ID"
+// @Success 200 {object} APIResponse
+// @Failure 400 {object} APIResponse
+// @Failure 401 {object} APIResponse
+// @Router /auth/tokens/{id} [delete]
 func (h *TokenHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 	tokenID := chi.URLParam(r, "id")
 	if tokenID == "" {
