@@ -52,5 +52,8 @@ func (Event) Indexes() []ent.Index {
 		index.Fields("task_id"),
 		index.Fields("timestamp"),
 		index.Fields("project_id", "timestamp"),
+		index.Fields("event_type"),
+		index.Fields("task_id", "timestamp"),
+		index.Fields("runner_id"),
 	}
 }

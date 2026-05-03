@@ -47,5 +47,7 @@ func (Agent) Indexes() []ent.Index {
 		index.Fields("org_id"),
 		index.Fields("role_id"),
 		index.Fields("status"),
+		index.Fields("type"),
+		index.Fields("name"),
 	}
 }

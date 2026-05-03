@@ -38,5 +38,6 @@ func (Department) Edges() []ent.Edge {
 func (Department) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("org_id"),
+		index.Fields("lead_agent_id"),
 	}
 }

@@ -3,6 +3,7 @@ package schema
 import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 	"time"
 )
 
@@ -32,5 +33,7 @@ func (Organization) Edges() []ent.Edge {
 
 // Indexes of the Organization.
 func (Organization) Indexes() []ent.Index {
-	return []ent.Index{}
+	return []ent.Index{
+		index.Fields("name"),
+	}
 }

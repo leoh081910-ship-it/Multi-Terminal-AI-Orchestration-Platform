@@ -43,5 +43,6 @@ func (Message) Indexes() []ent.Index {
 		index.Fields("space_id"),
 		index.Fields("to_agent_id"),
 		index.Fields("from_agent_id"),
+		index.Fields("space_id", "created_at"),
 	}
 }

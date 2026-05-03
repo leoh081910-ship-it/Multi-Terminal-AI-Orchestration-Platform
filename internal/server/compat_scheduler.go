@@ -178,6 +178,19 @@ func (s *Server) handleCompatListProjects(w http.ResponseWriter, r *http.Request
 	s.writeJSON(w, http.StatusOK, registry.summaries())
 }
 
+// handleCompatListSchedulerTasks lists tasks with pagination and filtering.
+// @Summary List scheduled tasks
+// @Tags scheduler
+// @Produce json
+// @Security BearerAuth
+// @Param project_id query string false "Project ID"
+// @Param status query string false "Filter by status"
+// @Param owner_agent query string false "Filter by agent"
+// @Param type query string false "Filter by type"
+// @Param limit query int false "Page size (default 50, max 200)"
+// @Param offset query int false "Offset (default 0)"
+// @Success 200 {object} map[string]any
+// @Router /scheduler/tasks [get]
 func (s *Server) handleCompatListSchedulerTasks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := s.compatProjectIDFromRequest(r)
@@ -206,7 +219,24 @@ func (s *Server) handleCompatListSchedulerTasks(w http.ResponseWriter, r *http.R
 		filtered = append(filtered, task)
 	}
 
-	s.writeJSON(w, http.StatusOK, filtered)
+	limit, offset := parsePagination(r)
+	total := len(filtered)
+	if offset >= total {
+		filtered = []compatSchedulerTask{}
+	} else {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		filtered = filtered[offset:end]
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"items":  filtered,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 func (s *Server) handleCompatCreateSchedulerTask(w http.ResponseWriter, r *http.Request) {

@@ -40,5 +40,6 @@ func (Team) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("org_id"),
 		index.Fields("dept_id"),
+		index.Fields("lead_agent_id"),
 	}
 }

@@ -79,5 +79,8 @@ func (Task) Indexes() []ent.Index {
 		index.Fields("root_id"),
 		index.Fields("org_id"),
 		index.Fields("assigned_agent_id"),
+		index.Fields("assigned_role_id"),
+		index.Fields("project_id", "dispatch_ref"),
+		index.Fields("decomposition_status"),
 	}
 }
