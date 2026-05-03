@@ -24,6 +24,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/migrate"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/auth"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/backup"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/server"
@@ -82,6 +83,10 @@ func main() {
 	viper.SetDefault("routing.weights.capability", 0.5)
 	viper.SetDefault("routing.weights.load", 0.3)
 	viper.SetDefault("routing.weights.affinity", 0.2)
+	viper.SetDefault("backup.enabled", true)
+	viper.SetDefault("backup.dir", "backups")
+	viper.SetDefault("backup.max_keep", 24)
+	viper.SetDefault("backup.interval_minutes", 60)
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Warn().Err(err).Msg("config file not found, using defaults")
@@ -170,9 +175,45 @@ func main() {
 	srv.RegisterAuthRoutes(srv.Handler().(*chi.Mux), tokenHandler, authMiddleware)
 	log.Info().Msg("Authentication routes registered")
 
+	// Initialize backup service and scheduler
+	var backupScheduler *backup.Scheduler
+	if viper.GetBool("backup.enabled") {
+		backupSvc, err := backup.NewService(backup.Config{
+			DBPath:    dbPath,
+			BackupDir: viper.GetString("backup.dir"),
+			MaxKeep:   viper.GetInt("backup.max_keep"),
+		}, log.Logger)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize backup service")
+		}
+		backupHandler := server.NewBackupHandler(backupSvc)
+		srv.RegisterBackupRoutes(srv.Handler().(*chi.Mux), backupHandler, authMiddleware)
+		backupScheduler = backup.NewScheduler(
+			backupSvc,
+			time.Duration(viper.GetInt("backup.interval_minutes"))*time.Minute,
+			log.Logger,
+		)
+		log.Info().
+			Str("backup_dir", viper.GetString("backup.dir")).
+			Int("max_keep", viper.GetInt("backup.max_keep")).
+			Int("interval_minutes", viper.GetInt("backup.interval_minutes")).
+			Msg("backup service initialized")
+	}
+
 	srv.SetProjectConfigStore(server.NewProjectConfigStore(*configPath))
 	queueCtx, queueCancel := context.WithCancel(context.Background())
 	defer queueCancel()
+
+	if backupScheduler != nil {
+		if err := backupScheduler.Start(queueCtx); err != nil {
+			log.Error().Err(err).Msg("failed to start backup scheduler (non-fatal)")
+		}
+		defer func() {
+			if err := backupScheduler.Stop(); err != nil {
+				log.Error().Err(err).Msg("failed to stop backup scheduler")
+			}
+		}()
+	}
 
 	autoDispatcher := server.NewAutoDispatcher(srv, log.Logger, server.AutoDispatchConfig{
 		Interval: time.Duration(viper.GetInt("auto_dispatch.interval_ms")) * time.Millisecond,
