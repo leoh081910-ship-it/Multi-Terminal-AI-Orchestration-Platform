@@ -3,10 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/template"
 )
 
@@ -49,6 +52,7 @@ func (s *Server) registerTemplateRoutes() {
 		r.Put("/{id}", s.handleUpdateTemplate)
 		r.Delete("/{id}", s.handleDeleteTemplate)
 		r.Post("/{id}/instantiate", s.handleInstantiateTemplate)
+		r.Post("/{id}/instantiate/batch", s.handleInstantiateBatch)
 	})
 }
 
@@ -281,17 +285,22 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleInstantiateTemplate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := chi.URLParam(r, "id")
+	templateID := chi.URLParam(r, "id")
 
 	var req struct {
-		Params map[string]any `json:"params"`
+		Params     map[string]any `json:"params"`
+		DispatchRef string        `json:"dispatch_ref"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req.Params = make(map[string]any)
+		s.writeJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "invalid request body",
+		})
+		return
 	}
 
 	store := s.getTemplateStore()
-	tpl, err := store.Get(ctx, id)
+	tpl, err := store.Get(ctx, templateID)
 	if err != nil {
 		s.writeJSON(w, http.StatusNotFound, APIResponse{
 			Success: false,
@@ -300,24 +309,243 @@ func (s *Server) handleInstantiateTemplate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Build task config from template
-	taskConfig := map[string]any{
-		"title":        tpl.Name,
-		"owner_agent":  tpl.OwnerAgent,
-		"type":         tpl.TaskType,
-		"priority":     tpl.Priority,
-		"command":      tpl.Command,
-		"workspace_path": tpl.WorkDir,
-		"task_type":    tpl.TaskType,
+	// Validate required inputs against provided params
+	for _, input := range tpl.Inputs {
+		if input.Required {
+			if val, ok := req.Params[input.Name]; !ok || val == nil || val == "" {
+				s.writeJSON(w, http.StatusBadRequest, APIResponse{
+					Success: false,
+					Error:   fmt.Sprintf("missing required input parameter: %s", input.Name),
+				})
+				return
+			}
+		}
 	}
 
-	// Merge user params
-	for k, v := range req.Params {
-		taskConfig[k] = v
+	// Build task config from template with param substitution
+	taskPayload := s.substituteTemplate(tpl, req.Params)
+	taskPayload["project_id"] = tpl.ProjectID
+
+	// Generate dispatch ref if not provided
+	dispatchRef := req.DispatchRef
+	if dispatchRef == "" {
+		if tpl.ProjectID != "" {
+			dispatchRef = tpl.ProjectID
+		} else {
+			dispatchRef = "template-" + templateID[:8]
+		}
+	}
+	taskPayload["dispatch_ref"] = dispatchRef
+
+	// Build the task card using the existing compat scheduler logic
+	taskID := "TMPL-" + uuid.NewString()[:8]
+	taskPayload["task_id"] = taskID
+	taskPayload["id"] = taskID
+
+	card, err := buildCompatTaskCard(taskPayload, nil, taskID, tpl.ProjectID)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("instantiate: failed to build task card")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to instantiate template: " + err.Error(),
+		})
+		return
 	}
 
-	s.writeJSON(w, http.StatusOK, APIResponse{
+	if _, err := s.repo.CreateTask(ctx, card); err != nil {
+		s.logger.Error().Err(err).Str("template_id", templateID).Str("task_id", taskID).Msg("instantiate: failed to create task")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to create task from template",
+		})
+		return
+	}
+
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("instantiate: failed to reload task")
+		s.writeJSON(w, http.StatusCreated, APIResponse{
+			Success: true,
+			Data:    map[string]string{"id": taskID},
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusCreated, APIResponse{
 		Success: true,
-		Data:    taskConfig,
+		Data:    s.mapCompatTask(task),
+	})
+}
+
+// substituteTemplate renders template fields by replacing {{param}} placeholders with provided values.
+func (s *Server) substituteTemplate(tpl *template.TaskTemplateSQL, params map[string]any) map[string]any {
+	result := make(map[string]any)
+
+	// String fields that support template substitution
+	strFields := map[string]string{
+		"name":        tpl.Name,
+		"description": tpl.Description,
+		"command":     tpl.Command,
+		"work_dir":     tpl.WorkDir,
+	}
+	for key, val := range strFields {
+		if val != "" {
+			result[key] = s.substituteString(val, params)
+		}
+	}
+
+	// Direct value fields
+	if tpl.TaskType != "" {
+		result["type"] = tpl.TaskType
+	}
+	if tpl.OwnerAgent != "" {
+		result["owner_agent"] = tpl.OwnerAgent
+	}
+	if tpl.Priority > 0 {
+		result["priority"] = tpl.Priority
+	}
+
+	// Propagate user-provided params (allows overriding template defaults)
+	for k, v := range params {
+		result[k] = v
+	}
+
+	return result
+}
+
+// substituteString replaces {{param}} and {{param.default}} placeholders with actual values.
+func (s *Server) substituteString(text string, params map[string]any) string {
+	// Pattern: {{paramName}} or {{paramName:defaultValue}}
+	re := regexp.MustCompile(`\{\{([^}:]+)(?::([^}]*))?\}\}`)
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		matches := re.FindStringSubmatch(match)
+		paramName := matches[1]
+		defaultVal := ""
+		if len(matches) > 2 {
+			defaultVal = matches[2]
+		}
+		if val, ok := params[paramName]; ok && val != nil {
+			return fmt.Sprintf("%v", val)
+		}
+		return defaultVal
+	})
+}
+
+// handleInstantiateBatch instantiates a template and creates multiple tasks with sequential params.
+// POST /templates/{id}/instantiate/batch
+func (s *Server) handleInstantiateBatch(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	templateID := chi.URLParam(r, "id")
+
+	var req struct {
+		Params       []map[string]any `json:"params"` // array of param sets, one per task
+		DispatchRef  string            `json:"dispatch_ref"`
+		Wave         int              `json:"wave"`
+		TopoRankStart int              `json:"topo_rank_start"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "invalid request body",
+		})
+		return
+	}
+
+	if len(req.Params) == 0 {
+		s.writeJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "params array is required and must not be empty",
+		})
+		return
+	}
+	if len(req.Params) > 100 {
+		s.writeJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "too many tasks (max 100)",
+		})
+		return
+	}
+
+	tpl, err := s.getTemplateStore().Get(ctx, templateID)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "template not found",
+		})
+		return
+	}
+
+	dispatchRef := req.DispatchRef
+	if dispatchRef == "" {
+		if tpl.ProjectID != "" {
+			dispatchRef = tpl.ProjectID
+		} else {
+			dispatchRef = "template-batch-" + templateID[:8]
+		}
+	}
+
+	wave := req.Wave
+	if wave == 0 {
+		wave = 1
+	}
+	topoRankStart := req.TopoRankStart
+
+	created := make([]compatSchedulerTask, 0, len(req.Params))
+	errors := make([]map[string]any, 0)
+
+	for i, params := range req.Params {
+		taskPayload := s.substituteTemplate(tpl, params)
+		taskID := fmt.Sprintf("TMPL-%s-%03d", uuid.NewString()[:8], i+1)
+		taskPayload["task_id"] = taskID
+		taskPayload["id"] = taskID
+		taskPayload["project_id"] = tpl.ProjectID
+		taskPayload["dispatch_ref"] = dispatchRef
+		taskPayload["wave"] = wave
+		taskPayload["topo_rank"] = topoRankStart + i
+
+		card, err := buildCompatTaskCard(taskPayload, nil, taskID, tpl.ProjectID)
+		if err != nil {
+			errors = append(errors, map[string]any{
+				"index":  i,
+				"detail": err.Error(),
+			})
+			continue
+		}
+
+		if _, err := s.repo.CreateTask(ctx, card); err != nil {
+			s.logger.Error().Err(err).Int("index", i).Msg("batch instantiate: failed to create task")
+			errors = append(errors, map[string]any{
+				"index":  i,
+				"detail": "failed to create task",
+			})
+			continue
+		}
+
+		task, err := s.repo.GetTaskByID(ctx, taskID)
+		if err != nil {
+			errors = append(errors, map[string]any{
+				"index":  i,
+				"detail": "failed to reload task",
+			})
+			continue
+		}
+
+		created = append(created, s.mapCompatTask(task))
+	}
+
+	status := http.StatusCreated
+	if len(errors) > 0 && len(created) == 0 {
+		status = http.StatusBadRequest
+	}
+
+	s.writeJSON(w, status, APIResponse{
+		Success: len(errors) == 0,
+		Data: map[string]any{
+			"created": created,
+			"errors":  errors,
+			"total":   len(req.Params),
+			"succeeded": len(created),
+			"failed":  len(errors),
+		},
 	})
 }
