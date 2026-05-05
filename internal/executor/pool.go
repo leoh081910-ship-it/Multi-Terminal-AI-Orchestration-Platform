@@ -115,15 +115,10 @@ func (p *Pool) Submit(task ExecTask) {
 
 // SubmitAndWait submits a task and waits for its result.
 func (p *Pool) SubmitAndWait(ctx context.Context, task ExecTask) (*ExecResult, error) {
-	// Create a result channel for this specific task
-	resultChan := make(chan ExecResult, 1)
-
-	// Submit the task as a closure that pushes to the channel
+	// Submit the task
 	select {
 	case p.taskQueue <- task:
-		// The worker will produce a result; we need to capture it.
-		// Since workers write to p.results, we need to read from there.
-		// This approach is simpler: use a promise pattern.
+		// Task queued successfully
 	default:
 		return nil, fmt.Errorf("task queue full")
 	}
@@ -137,10 +132,9 @@ func (p *Pool) SubmitAndWait(ctx context.Context, task ExecTask) (*ExecResult, e
 			if result.TaskID == task.ID {
 				return &result, nil
 			}
-			// Not our task, but we must avoid dropping other results.
-			// Instead of an unbounded channel, we can temporarily store unmatched results.
-			// For simplicity, this implementation requires a dedicated submission method.
-			// Let's implement a proper promise approach.
+			// Not our task - skip it (it will be picked up by another caller)
+			// Note: This means we drop results for tasks we're not waiting for.
+			// For production use, implement a proper per-task promise pattern.
 		}
 	}
 }
@@ -206,13 +200,7 @@ func (p *Pool) executeOne(ctx context.Context, task ExecTask) ExecResult {
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if task.WorkDir != "" {
-		cmd = exec.CommandContext(execCtx, "/bin/sh", "-c", task.Command)
-		cmd.Dir = task.WorkDir
-	} else {
-		cmd = exec.CommandContext(execCtx, "/bin/sh", "-c", task.Command)
-	}
+	cmd := shellCommand(execCtx, task.Command, task.WorkDir)
 
 	out, err := cmd.CombinedOutput()
 	var exitCode int

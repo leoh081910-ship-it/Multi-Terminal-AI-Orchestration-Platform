@@ -152,7 +152,7 @@ func main() {
 	log.Info().Msg("database schema initialized")
 
 	// Initialize repository and server
-	repo := store.NewRepository(client, &log.Logger)
+	repo := store.NewRepository(client, db, &log.Logger)
 	srv := server.New(repo, log.Logger)
 	srv.SetWebDistDir(viper.GetString("web.dist_dir"))
 

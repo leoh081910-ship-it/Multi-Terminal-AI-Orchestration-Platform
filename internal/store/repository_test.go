@@ -34,7 +34,7 @@ func setupTestDB(t *testing.T) (*Repository, func()) {
 	}
 
 	logger := zerolog.New(nil)
-	repo := NewRepository(client, &logger)
+	repo := NewRepository(client, db, &logger)
 
 	cleanup := func() {
 		client.Close()

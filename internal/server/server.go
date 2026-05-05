@@ -23,6 +23,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/template"
 	"github.com/rs/zerolog"
 )
 
@@ -63,6 +64,9 @@ type Server struct {
 
 	// Phase 5: intelligent routing
 	taskRouter *router.Router
+
+	// Phase 6: template system
+	templateStore *template.Store
 }
 
 // New creates a new Server instance.
@@ -73,14 +77,15 @@ func New(repo *store.Repository, logger zerolog.Logger) *Server {
 	go wsHub.Run()
 
 	s := &Server{
-		repo:         repo,
-		logger:       logger,
-		router:       chi.NewRouter(),
-		orgSvc:       org.NewService(repo.Client()),
-		knowledgeSvc: knowledge.NewService(repo.Client()),
-		eventBus:     eventBus,
-		wsHub:        wsHub,
-		webDistDir:   filepath.FromSlash("web/dist"),
+		repo:          repo,
+		logger:        logger,
+		router:        chi.NewRouter(),
+		orgSvc:        org.NewService(repo.Client()),
+		knowledgeSvc:  knowledge.NewService(repo.Client()),
+		eventBus:      eventBus,
+		wsHub:         wsHub,
+		webDistDir:    filepath.FromSlash("web/dist"),
+		templateStore: template.NewStore(repo.DB()),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -126,6 +131,7 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
+		duration := time.Since(start)
 		logger := telemetry.FromContext(r.Context())
 		if logger.GetLevel() == zerolog.Disabled {
 			logger = s.logger
@@ -134,9 +140,14 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
 			Int("status", ww.Status()).
-			Dur("duration", time.Since(start)).
+			Dur("duration", duration).
 			Str("remote_addr", r.RemoteAddr).
 			Msg("request")
+
+		routePath := metricsRoutePattern(r)
+		status := strconv.Itoa(ww.Status())
+		telemetry.HTTPRequestsTotal.WithLabelValues(r.Method, routePath, status).Inc()
+		telemetry.HTTPRequestDuration.WithLabelValues(r.Method, routePath).Observe(duration.Seconds())
 	})
 }
 
@@ -195,12 +206,21 @@ func (s *Server) setupRoutes() {
 	})
 
 	s.registerStaticWebRoutes()
+	s.registerSwaggerRoutes()
+	s.registerMetricsRoutes()
+	s.registerTemplateRoutes()
+
+	// Initialize template table if it doesn't exist
+	if err := s.initTemplateTable(context.Background()); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to init template table (non-fatal)")
+	}
 }
 
 func (s *Server) registerCompatProjectRoutes(r chi.Router) {
 	r.Route("/scheduler", func(r chi.Router) {
 		r.Get("/tasks", s.handleCompatListSchedulerTasks)
 		r.Post("/tasks", s.handleCompatCreateSchedulerTask)
+		r.Post("/tasks/bulk", s.handleCompatBulkCreateSchedulerTasks)
 		r.Patch("/tasks/{id}", s.handleCompatUpdateSchedulerTask)
 		r.Post("/tasks/{id}/dispatch", s.handleCompatDispatchSchedulerTask)
 		r.Post("/tasks/{id}/retry", s.handleCompatRetrySchedulerTask)

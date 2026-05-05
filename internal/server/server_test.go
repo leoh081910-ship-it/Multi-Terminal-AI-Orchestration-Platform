@@ -23,6 +23,21 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+type paginatedTasks struct {
+	Items  []compatSchedulerTask `json:"items"`
+	Total  int                   `json:"total"`
+	Limit  int                   `json:"limit"`
+	Offset int                   `json:"offset"`
+}
+
+func decodePaginatedTasks(body []byte) ([]compatSchedulerTask, error) {
+	var page paginatedTasks
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 func setupTestServer(t *testing.T) (*Server, *store.Repository, func()) {
 	t.Helper()
 
@@ -40,7 +55,7 @@ func setupTestServer(t *testing.T) (*Server, *store.Repository, func()) {
 	}
 
 	logger := zerolog.New(nil)
-	repo := store.NewRepository(client, &logger)
+	repo := store.NewRepository(client, db, &logger)
 	srv := New(repo, logger)
 
 	cleanup := func() {
@@ -67,7 +82,7 @@ func setupTestServerWithClient(t *testing.T) (*Server, *store.Repository, *ent.C
 	}
 
 	logger := zerolog.New(nil)
-	repo := store.NewRepository(client, &logger)
+	repo := store.NewRepository(client, db, &logger)
 	srv := New(repo, logger)
 
 	cleanup := func() {
@@ -454,8 +469,8 @@ func TestCompatSchedulerEndpointsExposeTSIReadShape(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
 	}
 
-	var tasks []compatSchedulerTask
-	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&tasks); err != nil {
+	tasks, err := decodePaginatedTasks(res.Body.Bytes())
+	if err != nil {
 		t.Fatalf("failed to decode tasks response: %v", err)
 	}
 	if len(tasks) != 4 {
@@ -481,8 +496,8 @@ func TestCompatSchedulerEndpointsExposeTSIReadShape(t *testing.T) {
 	res = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(res, req)
 
-	var filtered []compatSchedulerTask
-	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&filtered); err != nil {
+	filtered, err := decodePaginatedTasks(res.Body.Bytes())
+	if err != nil {
 		t.Fatalf("failed to decode filtered tasks response: %v", err)
 	}
 	if len(filtered) != 1 || filtered[0].TaskID != "GM-001" {
@@ -678,8 +693,8 @@ func TestCompatSchedulerProjectScopedRoutesFilterTasks(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
 	}
 
-	var tasks []compatSchedulerTask
-	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&tasks); err != nil {
+	tasks, err := decodePaginatedTasks(res.Body.Bytes())
+	if err != nil {
 		t.Fatalf("failed to decode tasks response: %v", err)
 	}
 	if len(tasks) != 1 || tasks[0].TaskID != "ALPHA-001" || tasks[0].ProjectID != "alpha" {
@@ -991,8 +1006,8 @@ func TestCompatSchedulerTasksFallbackToLegacyTaskCardFields(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
 	}
 
-	var tasks []compatSchedulerTask
-	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&tasks); err != nil {
+	tasks, err := decodePaginatedTasks(res.Body.Bytes())
+	if err != nil {
 		t.Fatalf("failed to decode tasks response: %v", err)
 	}
 	if len(tasks) != 1 {

@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -110,13 +111,15 @@ type EventData struct {
 // Repository wraps ent.Client and provides transactional CRUD operations.
 type Repository struct {
 	client *ent.Client
+	sqlDB  *sql.DB
 	logger *zerolog.Logger
 }
 
 // NewRepository creates a new Repository instance.
-func NewRepository(client *ent.Client, logger *zerolog.Logger) *Repository {
+func NewRepository(client *ent.Client, sqlDB *sql.DB, logger *zerolog.Logger) *Repository {
 	return &Repository{
 		client: client,
+		sqlDB:  sqlDB,
 		logger: logger,
 	}
 }
@@ -124,6 +127,11 @@ func NewRepository(client *ent.Client, logger *zerolog.Logger) *Repository {
 // Client returns the underlying ent client.
 func (r *Repository) Client() *ent.Client {
 	return r.client
+}
+
+// DB returns the underlying sql.DB for direct database access.
+func (r *Repository) DB() *sql.DB {
+	return r.sqlDB
 }
 
 // WithTx executes the given function within a transaction.

@@ -49,7 +49,7 @@ func setupBenchDB(b *testing.B) (*Repository, func()) {
 		b.Fatal(err)
 	}
 	logger := zerolog.New(nil)
-	repo := NewRepository(client, &logger)
+	repo := NewRepository(client, db, &logger)
 	return repo, func() { client.Close() }
 }
 

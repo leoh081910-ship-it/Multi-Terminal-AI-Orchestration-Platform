@@ -2,37 +2,49 @@ package executor
 
 import (
 	"context"
+	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
+
+func echoCmd(s string) string {
+	if runtime.GOOS == "windows" {
+		return "cmd /c echo " + s
+	}
+	return "echo " + s
+}
+
+func sleepCmd(d string) string {
+	if runtime.GOOS == "windows" {
+		return "cmd /c timeout /t " + d + " /nobreak >nul && echo done"
+	}
+	return "sleep " + d + "; echo done"
+}
 
 func TestWorkerPoolBasic(t *testing.T) {
 	logger := zerolog.Nop()
-	exec := NewStandardExecutor(WithLogger(logger))
+	exec := NewStandardExecutor()
 	pool := NewPool(exec, logger, PoolConfig{Workers: 2, QueueSize: 10})
 	pool.Start(context.Background())
 	defer pool.Stop()
 
-	// Submit a task
 	task := ExecTask{
 		ID:      "test-1",
-		Command: "echo hello",
+		Command: echoCmd("hello"),
 		WorkDir: "",
 		Timeout: 5 * time.Second,
 	}
 
 	select {
 	case pool.taskQueue <- task:
-		// Successfully queued
 	case <-time.After(1 * time.Second):
 		t.Fatal("failed to queue task")
 	}
 
-	// Wait for result
 	select {
 	case result := <-pool.ResultsChan():
 		assert.Equal(t, "test-1", result.TaskID)
@@ -45,7 +57,7 @@ func TestWorkerPoolBasic(t *testing.T) {
 
 func TestWorkerPoolMultipleTasks(t *testing.T) {
 	logger := zerolog.Nop()
-	exec := NewStandardExecutor(WithLogger(logger))
+	exec := NewStandardExecutor()
 	pool := NewPool(exec, logger, PoolConfig{Workers: 3, QueueSize: 20})
 	pool.Start(context.Background())
 	defer pool.Stop()
@@ -53,8 +65,8 @@ func TestWorkerPoolMultipleTasks(t *testing.T) {
 	taskCount := 10
 	for i := 0; i < taskCount; i++ {
 		pool.Submit(ExecTask{
-			ID:      "task-" + string(rune('0'+i)),
-			Command: "echo " + string(rune('0'+i)),
+			ID:      fmt.Sprintf("task-%d", i),
+			Command: echoCmd(fmt.Sprintf("%d", i)),
 		})
 	}
 
@@ -76,7 +88,7 @@ func TestWorkerPoolMultipleTasks(t *testing.T) {
 
 func TestWorkerPoolConcurrent(t *testing.T) {
 	logger := zerolog.Nop()
-	exec := NewStandardExecutor(WithLogger(logger))
+	exec := NewStandardExecutor()
 	pool := NewPool(exec, logger, PoolConfig{Workers: 4, QueueSize: 50})
 	pool.Start(context.Background())
 	defer pool.Stop()
@@ -86,8 +98,8 @@ func TestWorkerPoolConcurrent(t *testing.T) {
 
 	for i := 0; i < taskCount; i++ {
 		pool.Submit(ExecTask{
-			ID:      "sleep-task-" + string(rune('0'+i)),
-			Command: "sleep 0.05; echo done",
+			ID:      fmt.Sprintf("sleep-task-%d", i),
+			Command: sleepCmd("1"),
 		})
 	}
 
@@ -96,13 +108,11 @@ func TestWorkerPoolConcurrent(t *testing.T) {
 		select {
 		case <-pool.ResultsChan():
 			results++
-		case <-time.After(5 * time.Second):
+		case <-time.After(15 * time.Second):
 			t.Fatalf("timeout: got %d results", results)
 		}
 	}
 
 	duration := time.Since(start)
-	// With 4 workers, 20 * 0.05s = 1s of total work; should finish in ~1s if parallelism works
-	// Give 3x margin for CI
-	assert.Less(t, duration, 2*time.Second, "parallel execution should complete within 2 seconds")
+	assert.Less(t, duration, 10*time.Second, "parallel execution should complete within 10 seconds")
 }

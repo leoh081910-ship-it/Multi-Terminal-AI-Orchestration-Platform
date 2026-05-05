@@ -272,6 +272,89 @@ func (s *Server) handleCompatCreateSchedulerTask(w http.ResponseWriter, r *http.
 	s.writeJSON(w, http.StatusCreated, s.mapCompatTask(task))
 }
 
+// handleCompatBulkCreateSchedulerTasks creates multiple tasks in a single request.
+// @Summary Bulk create scheduled tasks
+// @Tags scheduler
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tasks body []map[string]interface{} true "Array of task payloads"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /scheduler/tasks/bulk [post]
+func (s *Server) handleCompatBulkCreateSchedulerTasks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+
+	defer r.Body.Close()
+	var payloads []map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&payloads); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Invalid request body: expected JSON array"})
+		return
+	}
+
+	if len(payloads) == 0 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Empty task list"})
+		return
+	}
+	if len(payloads) > 100 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Too many tasks (max 100)"})
+		return
+	}
+
+	created := make([]compatSchedulerTask, 0, len(payloads))
+	errors := make([]map[string]string, 0)
+
+	for i, payload := range payloads {
+		payload["project_id"] = projectID
+		card, err := buildCompatTaskCard(payload, nil, "", s.defaultCompatProjectID())
+		if err != nil {
+			errors = append(errors, map[string]string{
+				"index":   fmt.Sprintf("%d", i),
+				"detail":  err.Error(),
+				"task_id": readString(payload, "task_id"),
+			})
+			continue
+		}
+
+		if _, err := s.repo.CreateTask(ctx, card); err != nil {
+			s.logger.Error().Err(err).Str("task_id", card.ID).Int("index", i).Msg("bulk create: failed to create task")
+			errors = append(errors, map[string]string{
+				"index":   fmt.Sprintf("%d", i),
+				"detail":  "Failed to create task",
+				"task_id": card.ID,
+			})
+			continue
+		}
+
+		task, err := s.repo.GetTaskByID(ctx, card.ID)
+		if err != nil {
+			s.logger.Error().Err(err).Str("task_id", card.ID).Msg("bulk create: failed to reload task")
+			errors = append(errors, map[string]string{
+				"index":   fmt.Sprintf("%d", i),
+				"detail":  "Failed to load created task",
+				"task_id": card.ID,
+			})
+			continue
+		}
+
+		created = append(created, s.mapCompatTask(task))
+	}
+
+	status := http.StatusCreated
+	if len(errors) > 0 && len(created) == 0 {
+		status = http.StatusBadRequest
+	} else if len(errors) > 0 {
+		status = http.StatusMultiStatus
+	}
+
+	s.writeJSON(w, status, map[string]any{
+		"created": created,
+		"errors":  errors,
+		"total":   len(payloads),
+	})
+}
+
 func (s *Server) handleCompatUpdateSchedulerTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
