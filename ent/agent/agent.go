@@ -27,6 +27,10 @@ const (
 	FieldSpecialties = "specialties"
 	// FieldConfig holds the string denoting the config field in the database.
 	FieldConfig = "config"
+	// FieldRunnerType holds the string denoting the runner_type field in the database.
+	FieldRunnerType = "runner_type"
+	// FieldRunnerConfig holds the string denoting the runner_config field in the database.
+	FieldRunnerConfig = "runner_config"
 	// FieldLastHeartbeatAt holds the string denoting the last_heartbeat_at field in the database.
 	FieldLastHeartbeatAt = "last_heartbeat_at"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -45,6 +49,8 @@ var Columns = []string{
 	FieldStatus,
 	FieldSpecialties,
 	FieldConfig,
+	FieldRunnerType,
+	FieldRunnerConfig,
 	FieldLastHeartbeatAt,
 	FieldCreatedAt,
 }
@@ -66,6 +72,10 @@ var (
 	DefaultSpecialties string
 	// DefaultConfig holds the default value on creation for the "config" field.
 	DefaultConfig string
+	// DefaultRunnerType holds the default value on creation for the "runner_type" field.
+	DefaultRunnerType string
+	// DefaultRunnerConfig holds the default value on creation for the "runner_config" field.
+	DefaultRunnerConfig string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -111,6 +121,16 @@ func BySpecialties(opts ...sql.OrderTermOption) OrderOption {
 // ByConfig orders the results by the config field.
 func ByConfig(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldConfig, opts...).ToFunc()
+}
+
+// ByRunnerType orders the results by the runner_type field.
+func ByRunnerType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRunnerType, opts...).ToFunc()
+}
+
+// ByRunnerConfig orders the results by the runner_config field.
+func ByRunnerConfig(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRunnerConfig, opts...).ToFunc()
 }
 
 // ByLastHeartbeatAt orders the results by the last_heartbeat_at field.

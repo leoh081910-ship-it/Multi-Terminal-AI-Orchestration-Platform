@@ -99,6 +99,16 @@ func Config(v string) predicate.Agent {
 	return predicate.Agent(sql.FieldEQ(FieldConfig, v))
 }
 
+// RunnerType applies equality check predicate on the "runner_type" field. It's identical to RunnerTypeEQ.
+func RunnerType(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldRunnerType, v))
+}
+
+// RunnerConfig applies equality check predicate on the "runner_config" field. It's identical to RunnerConfigEQ.
+func RunnerConfig(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldRunnerConfig, v))
+}
+
 // LastHeartbeatAt applies equality check predicate on the "last_heartbeat_at" field. It's identical to LastHeartbeatAtEQ.
 func LastHeartbeatAt(v time.Time) predicate.Agent {
 	return predicate.Agent(sql.FieldEQ(FieldLastHeartbeatAt, v))
@@ -572,6 +582,136 @@ func ConfigEqualFold(v string) predicate.Agent {
 // ConfigContainsFold applies the ContainsFold predicate on the "config" field.
 func ConfigContainsFold(v string) predicate.Agent {
 	return predicate.Agent(sql.FieldContainsFold(FieldConfig, v))
+}
+
+// RunnerTypeEQ applies the EQ predicate on the "runner_type" field.
+func RunnerTypeEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldRunnerType, v))
+}
+
+// RunnerTypeNEQ applies the NEQ predicate on the "runner_type" field.
+func RunnerTypeNEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldNEQ(FieldRunnerType, v))
+}
+
+// RunnerTypeIn applies the In predicate on the "runner_type" field.
+func RunnerTypeIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldIn(FieldRunnerType, vs...))
+}
+
+// RunnerTypeNotIn applies the NotIn predicate on the "runner_type" field.
+func RunnerTypeNotIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldNotIn(FieldRunnerType, vs...))
+}
+
+// RunnerTypeGT applies the GT predicate on the "runner_type" field.
+func RunnerTypeGT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGT(FieldRunnerType, v))
+}
+
+// RunnerTypeGTE applies the GTE predicate on the "runner_type" field.
+func RunnerTypeGTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGTE(FieldRunnerType, v))
+}
+
+// RunnerTypeLT applies the LT predicate on the "runner_type" field.
+func RunnerTypeLT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLT(FieldRunnerType, v))
+}
+
+// RunnerTypeLTE applies the LTE predicate on the "runner_type" field.
+func RunnerTypeLTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLTE(FieldRunnerType, v))
+}
+
+// RunnerTypeContains applies the Contains predicate on the "runner_type" field.
+func RunnerTypeContains(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContains(FieldRunnerType, v))
+}
+
+// RunnerTypeHasPrefix applies the HasPrefix predicate on the "runner_type" field.
+func RunnerTypeHasPrefix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasPrefix(FieldRunnerType, v))
+}
+
+// RunnerTypeHasSuffix applies the HasSuffix predicate on the "runner_type" field.
+func RunnerTypeHasSuffix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasSuffix(FieldRunnerType, v))
+}
+
+// RunnerTypeEqualFold applies the EqualFold predicate on the "runner_type" field.
+func RunnerTypeEqualFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEqualFold(FieldRunnerType, v))
+}
+
+// RunnerTypeContainsFold applies the ContainsFold predicate on the "runner_type" field.
+func RunnerTypeContainsFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContainsFold(FieldRunnerType, v))
+}
+
+// RunnerConfigEQ applies the EQ predicate on the "runner_config" field.
+func RunnerConfigEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldRunnerConfig, v))
+}
+
+// RunnerConfigNEQ applies the NEQ predicate on the "runner_config" field.
+func RunnerConfigNEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldNEQ(FieldRunnerConfig, v))
+}
+
+// RunnerConfigIn applies the In predicate on the "runner_config" field.
+func RunnerConfigIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldIn(FieldRunnerConfig, vs...))
+}
+
+// RunnerConfigNotIn applies the NotIn predicate on the "runner_config" field.
+func RunnerConfigNotIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldNotIn(FieldRunnerConfig, vs...))
+}
+
+// RunnerConfigGT applies the GT predicate on the "runner_config" field.
+func RunnerConfigGT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGT(FieldRunnerConfig, v))
+}
+
+// RunnerConfigGTE applies the GTE predicate on the "runner_config" field.
+func RunnerConfigGTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGTE(FieldRunnerConfig, v))
+}
+
+// RunnerConfigLT applies the LT predicate on the "runner_config" field.
+func RunnerConfigLT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLT(FieldRunnerConfig, v))
+}
+
+// RunnerConfigLTE applies the LTE predicate on the "runner_config" field.
+func RunnerConfigLTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLTE(FieldRunnerConfig, v))
+}
+
+// RunnerConfigContains applies the Contains predicate on the "runner_config" field.
+func RunnerConfigContains(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContains(FieldRunnerConfig, v))
+}
+
+// RunnerConfigHasPrefix applies the HasPrefix predicate on the "runner_config" field.
+func RunnerConfigHasPrefix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasPrefix(FieldRunnerConfig, v))
+}
+
+// RunnerConfigHasSuffix applies the HasSuffix predicate on the "runner_config" field.
+func RunnerConfigHasSuffix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasSuffix(FieldRunnerConfig, v))
+}
+
+// RunnerConfigEqualFold applies the EqualFold predicate on the "runner_config" field.
+func RunnerConfigEqualFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEqualFold(FieldRunnerConfig, v))
+}
+
+// RunnerConfigContainsFold applies the ContainsFold predicate on the "runner_config" field.
+func RunnerConfigContainsFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContainsFold(FieldRunnerConfig, v))
 }
 
 // LastHeartbeatAtEQ applies the EQ predicate on the "last_heartbeat_at" field.

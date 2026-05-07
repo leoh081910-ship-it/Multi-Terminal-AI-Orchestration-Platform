@@ -31,6 +31,10 @@ type Agent struct {
 	Specialties string `json:"specialties,omitempty"`
 	// Config holds the value of the "config" field.
 	Config string `json:"config,omitempty"`
+	// RunnerType holds the value of the "runner_type" field.
+	RunnerType string `json:"runner_type,omitempty"`
+	// RunnerConfig holds the value of the "runner_config" field.
+	RunnerConfig string `json:"runner_config,omitempty"`
 	// LastHeartbeatAt holds the value of the "last_heartbeat_at" field.
 	LastHeartbeatAt time.Time `json:"last_heartbeat_at,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -43,7 +47,7 @@ func (*Agent) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case agent.FieldID, agent.FieldOrgID, agent.FieldName, agent.FieldType, agent.FieldRoleID, agent.FieldStatus, agent.FieldSpecialties, agent.FieldConfig:
+		case agent.FieldID, agent.FieldOrgID, agent.FieldName, agent.FieldType, agent.FieldRoleID, agent.FieldStatus, agent.FieldSpecialties, agent.FieldConfig, agent.FieldRunnerType, agent.FieldRunnerConfig:
 			values[i] = new(sql.NullString)
 		case agent.FieldLastHeartbeatAt, agent.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -109,6 +113,18 @@ func (_m *Agent) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field config", values[i])
 			} else if value.Valid {
 				_m.Config = value.String
+			}
+		case agent.FieldRunnerType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field runner_type", values[i])
+			} else if value.Valid {
+				_m.RunnerType = value.String
+			}
+		case agent.FieldRunnerConfig:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field runner_config", values[i])
+			} else if value.Valid {
+				_m.RunnerConfig = value.String
 			}
 		case agent.FieldLastHeartbeatAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -178,6 +194,12 @@ func (_m *Agent) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("config=")
 	builder.WriteString(_m.Config)
+	builder.WriteString(", ")
+	builder.WriteString("runner_type=")
+	builder.WriteString(_m.RunnerType)
+	builder.WriteString(", ")
+	builder.WriteString("runner_config=")
+	builder.WriteString(_m.RunnerConfig)
 	builder.WriteString(", ")
 	builder.WriteString("last_heartbeat_at=")
 	builder.WriteString(_m.LastHeartbeatAt.Format(time.ANSIC))

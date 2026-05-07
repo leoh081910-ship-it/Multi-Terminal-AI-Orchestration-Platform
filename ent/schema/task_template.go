@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+	"time"
 )
 
 // TaskTemplate holds the schema definition for the TaskTemplate entity.
@@ -27,8 +28,8 @@ func (TaskTemplate) Fields() []ent.Field {
 		field.JSON("inputs", []map[string]interface{}{}).Optional(),
 		field.JSON("outputs", []map[string]interface{}{}).Optional(),
 		field.String("created_by").MaxLen(100).Optional(),
-		field.Time("created_at").Default(now),
-		field.Time("updated_at").Default(now).UpdateDefault(now),
+		field.Time("created_at").Default(time.Now),
+		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}
 }
 
@@ -37,8 +38,4 @@ func (TaskTemplate) Indexes() []ent.Index {
 		index.Fields("project_id"),
 		index.Fields("name"),
 	}
-}
-
-func now() int64 {
-	return 0 // placeholder, but ent will handle default values
 }

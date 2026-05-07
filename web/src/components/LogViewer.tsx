@@ -23,7 +23,6 @@ export default function LogViewer({ projectId, taskId, maxLines = 500, height = 
   const [search, setSearch] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const idCounter = useRef(0);
 
   // Process WebSocket messages into log entries
   useEffect(() => {

@@ -132,6 +132,34 @@ func (_u *AgentUpdate) SetNillableConfig(v *string) *AgentUpdate {
 	return _u
 }
 
+// SetRunnerType sets the "runner_type" field.
+func (_u *AgentUpdate) SetRunnerType(v string) *AgentUpdate {
+	_u.mutation.SetRunnerType(v)
+	return _u
+}
+
+// SetNillableRunnerType sets the "runner_type" field if the given value is not nil.
+func (_u *AgentUpdate) SetNillableRunnerType(v *string) *AgentUpdate {
+	if v != nil {
+		_u.SetRunnerType(*v)
+	}
+	return _u
+}
+
+// SetRunnerConfig sets the "runner_config" field.
+func (_u *AgentUpdate) SetRunnerConfig(v string) *AgentUpdate {
+	_u.mutation.SetRunnerConfig(v)
+	return _u
+}
+
+// SetNillableRunnerConfig sets the "runner_config" field if the given value is not nil.
+func (_u *AgentUpdate) SetNillableRunnerConfig(v *string) *AgentUpdate {
+	if v != nil {
+		_u.SetRunnerConfig(*v)
+	}
+	return _u
+}
+
 // SetLastHeartbeatAt sets the "last_heartbeat_at" field.
 func (_u *AgentUpdate) SetLastHeartbeatAt(v time.Time) *AgentUpdate {
 	_u.mutation.SetLastHeartbeatAt(v)
@@ -230,6 +258,12 @@ func (_u *AgentUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Config(); ok {
 		_spec.SetField(agent.FieldConfig, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RunnerType(); ok {
+		_spec.SetField(agent.FieldRunnerType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RunnerConfig(); ok {
+		_spec.SetField(agent.FieldRunnerConfig, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastHeartbeatAt(); ok {
 		_spec.SetField(agent.FieldLastHeartbeatAt, field.TypeTime, value)
@@ -364,6 +398,34 @@ func (_u *AgentUpdateOne) SetNillableConfig(v *string) *AgentUpdateOne {
 	return _u
 }
 
+// SetRunnerType sets the "runner_type" field.
+func (_u *AgentUpdateOne) SetRunnerType(v string) *AgentUpdateOne {
+	_u.mutation.SetRunnerType(v)
+	return _u
+}
+
+// SetNillableRunnerType sets the "runner_type" field if the given value is not nil.
+func (_u *AgentUpdateOne) SetNillableRunnerType(v *string) *AgentUpdateOne {
+	if v != nil {
+		_u.SetRunnerType(*v)
+	}
+	return _u
+}
+
+// SetRunnerConfig sets the "runner_config" field.
+func (_u *AgentUpdateOne) SetRunnerConfig(v string) *AgentUpdateOne {
+	_u.mutation.SetRunnerConfig(v)
+	return _u
+}
+
+// SetNillableRunnerConfig sets the "runner_config" field if the given value is not nil.
+func (_u *AgentUpdateOne) SetNillableRunnerConfig(v *string) *AgentUpdateOne {
+	if v != nil {
+		_u.SetRunnerConfig(*v)
+	}
+	return _u
+}
+
 // SetLastHeartbeatAt sets the "last_heartbeat_at" field.
 func (_u *AgentUpdateOne) SetLastHeartbeatAt(v time.Time) *AgentUpdateOne {
 	_u.mutation.SetLastHeartbeatAt(v)
@@ -492,6 +554,12 @@ func (_u *AgentUpdateOne) sqlSave(ctx context.Context) (_node *Agent, err error)
 	}
 	if value, ok := _u.mutation.Config(); ok {
 		_spec.SetField(agent.FieldConfig, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RunnerType(); ok {
+		_spec.SetField(agent.FieldRunnerType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RunnerConfig(); ok {
+		_spec.SetField(agent.FieldRunnerConfig, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastHeartbeatAt(); ok {
 		_spec.SetField(agent.FieldLastHeartbeatAt, field.TypeTime, value)

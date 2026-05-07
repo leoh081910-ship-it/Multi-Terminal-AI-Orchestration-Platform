@@ -94,6 +94,34 @@ func (_c *AgentCreate) SetNillableConfig(v *string) *AgentCreate {
 	return _c
 }
 
+// SetRunnerType sets the "runner_type" field.
+func (_c *AgentCreate) SetRunnerType(v string) *AgentCreate {
+	_c.mutation.SetRunnerType(v)
+	return _c
+}
+
+// SetNillableRunnerType sets the "runner_type" field if the given value is not nil.
+func (_c *AgentCreate) SetNillableRunnerType(v *string) *AgentCreate {
+	if v != nil {
+		_c.SetRunnerType(*v)
+	}
+	return _c
+}
+
+// SetRunnerConfig sets the "runner_config" field.
+func (_c *AgentCreate) SetRunnerConfig(v string) *AgentCreate {
+	_c.mutation.SetRunnerConfig(v)
+	return _c
+}
+
+// SetNillableRunnerConfig sets the "runner_config" field if the given value is not nil.
+func (_c *AgentCreate) SetNillableRunnerConfig(v *string) *AgentCreate {
+	if v != nil {
+		_c.SetRunnerConfig(*v)
+	}
+	return _c
+}
+
 // SetLastHeartbeatAt sets the "last_heartbeat_at" field.
 func (_c *AgentCreate) SetLastHeartbeatAt(v time.Time) *AgentCreate {
 	_c.mutation.SetLastHeartbeatAt(v)
@@ -175,6 +203,14 @@ func (_c *AgentCreate) defaults() {
 		v := agent.DefaultConfig
 		_c.mutation.SetConfig(v)
 	}
+	if _, ok := _c.mutation.RunnerType(); !ok {
+		v := agent.DefaultRunnerType
+		_c.mutation.SetRunnerType(v)
+	}
+	if _, ok := _c.mutation.RunnerConfig(); !ok {
+		v := agent.DefaultRunnerConfig
+		_c.mutation.SetRunnerConfig(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := agent.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -200,6 +236,12 @@ func (_c *AgentCreate) check() error {
 	}
 	if _, ok := _c.mutation.Config(); !ok {
 		return &ValidationError{Name: "config", err: errors.New(`ent: missing required field "Agent.config"`)}
+	}
+	if _, ok := _c.mutation.RunnerType(); !ok {
+		return &ValidationError{Name: "runner_type", err: errors.New(`ent: missing required field "Agent.runner_type"`)}
+	}
+	if _, ok := _c.mutation.RunnerConfig(); !ok {
+		return &ValidationError{Name: "runner_config", err: errors.New(`ent: missing required field "Agent.runner_config"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Agent.created_at"`)}
@@ -266,6 +308,14 @@ func (_c *AgentCreate) createSpec() (*Agent, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Config(); ok {
 		_spec.SetField(agent.FieldConfig, field.TypeString, value)
 		_node.Config = value
+	}
+	if value, ok := _c.mutation.RunnerType(); ok {
+		_spec.SetField(agent.FieldRunnerType, field.TypeString, value)
+		_node.RunnerType = value
+	}
+	if value, ok := _c.mutation.RunnerConfig(); ok {
+		_spec.SetField(agent.FieldRunnerConfig, field.TypeString, value)
+		_node.RunnerConfig = value
 	}
 	if value, ok := _c.mutation.LastHeartbeatAt(); ok {
 		_spec.SetField(agent.FieldLastHeartbeatAt, field.TypeTime, value)

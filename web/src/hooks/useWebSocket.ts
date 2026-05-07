@@ -4,6 +4,7 @@ export interface WSMessage {
   type: string;
   project_id?: string;
   task_id?: string;
+  agent_id?: string;
   data?: unknown;
   timestamp: string;
 }

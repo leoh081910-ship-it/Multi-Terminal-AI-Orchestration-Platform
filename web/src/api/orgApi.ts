@@ -47,6 +47,8 @@ export interface Agent {
   config: Record<string, string>;
   last_heartbeat_at?: string;
   created_at: string;
+  runner_type?: string;
+  runner_config?: string;
 }
 
 interface ApiResponse<T> {
@@ -95,10 +97,10 @@ export const orgApi = {
   listAgents: async (orgId: string): Promise<Agent[]> =>
     client.get(`/orgs/${orgId}/agents`).then(unwrap) as Promise<Agent[]>,
 
-  createAgent: async (orgId: string, input: { name: string; type: string; role_id?: string; specialties?: string[] }): Promise<Agent> =>
+  createAgent: async (orgId: string, input: { name: string; type: string; role_id?: string; specialties?: string[]; runner_type?: string; runner_config?: string }): Promise<Agent> =>
     client.post(`/orgs/${orgId}/agents`, input).then(unwrap) as Promise<Agent>,
 
-  updateAgent: async (orgId: string, agentId: string, input: { status?: string; role_id?: string }): Promise<Agent> =>
+  updateAgent: async (orgId: string, agentId: string, input: { status?: string; role_id?: string; runner_type?: string; runner_config?: string }): Promise<Agent> =>
     client.patch(`/orgs/${orgId}/agents/${agentId}`, input).then(unwrap) as Promise<Agent>,
 
   deleteAgent: async (orgId: string, agentId: string): Promise<void> =>
@@ -106,6 +108,9 @@ export const orgApi = {
 
   agentHeartbeat: async (orgId: string, agentId: string): Promise<void> =>
     client.post(`/orgs/${orgId}/agents/${agentId}/heartbeat`).then(unwrap) as Promise<void>,
+
+  getAgentCapabilities: async (orgId: string, agentId: string): Promise<CapabilityManifest> =>
+    client.get(`/orgs/${orgId}/agents/${agentId}/capabilities`).then(unwrap) as Promise<CapabilityManifest>,
 
   // Routing
   previewRouting: async (orgId: string, input: { task_type: string; capabilities?: string[]; assigned_role_id?: string }): Promise<AgentScore[]> =>
@@ -120,4 +125,22 @@ export interface AgentScore {
   Load: number;
   Affinity: number;
   Available: boolean;
+  ManifestScore?: number;
+}
+
+export interface CapabilityManifest {
+  name: string;
+  task_types: string[];
+  model_family: string;
+  context_window: number;
+  max_input_size: number;
+  supports_thinking: boolean;
+  supports_multimodal: boolean;
+  supports_streaming: boolean;
+  latency_p50_ms: number;
+  cost_per_1k_input_cents: number;
+  cost_per_1k_output_cents: number;
+  runtime: string;
+  version: string;
+  tags: string[];
 }

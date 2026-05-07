@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import { orgApi, type Agent, type AgentScore } from '../api/orgApi';
+import { orgApi, type Agent, type AgentScore, type CapabilityManifest } from '../api/orgApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -12,7 +12,6 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function AgentWorkbenchPage() {
   const [orgId, setOrgId] = useState('');
-  const [nowMs] = useState(() => Date.now());
   useWebSocket();
 
   const { data: orgs = [] } = useQuery({
@@ -45,7 +44,7 @@ export default function AgentWorkbenchPage() {
       {/* Agent grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
         {agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} nowMs={nowMs} />
+          <AgentCard key={agent.id} agent={agent} orgId={orgId} />
         ))}
         {orgId && agents.length === 0 && (
           <div style={{ color: '#666', padding: 40, textAlign: 'center', gridColumn: '1 / -1' }}>
@@ -56,13 +55,45 @@ export default function AgentWorkbenchPage() {
 
       {/* Routing Preview */}
       {orgId && agents.length > 0 && <RoutingPreview orgId={orgId} />}
+
+      {/* HTTP/MCP Agent Registration */}
+      {orgId && <HTTPAgentForm orgId={orgId} />}
     </div>
   );
 }
 
-function AgentCard({ agent, nowMs }: { agent: Agent; nowMs: number }) {
+const RUNNER_TYPE_META: Record<string, { color: string; label: string }> = {
+  http: { color: '#ff9f43', label: 'HTTP' },
+  mcp: { color: '#a78bfa', label: 'MCP' },
+  cli: { color: '#00f2ea', label: 'CLI' },
+};
+
+function AgentCard({ agent, orgId }: { agent: Agent; orgId: string }) {
   const statusColor = STATUS_COLORS[agent.status] || '#888';
-  const isOnline = agent.last_heartbeat_at && (nowMs - new Date(agent.last_heartbeat_at).getTime() < 60000);
+  const isOnline = agent.last_heartbeat_at && (Date.now() - new Date(agent.last_heartbeat_at).getTime() < 60000);
+  const meta = RUNNER_TYPE_META[agent.runner_type ?? 'cli'] ?? RUNNER_TYPE_META.cli;
+
+  const [showCaps, setShowCaps] = useState(false);
+  const [capManifest, setCapManifest] = useState<CapabilityManifest | null>(null);
+
+  const fetchCaps = useMutation({
+    mutationFn: () => orgApi.getAgentCapabilities(orgId, agent.id),
+    onSuccess: (data) => {
+      setCapManifest(data as CapabilityManifest);
+      setShowCaps(true);
+    },
+  });
+
+  const handleViewCaps = () => {
+    if (showCaps) { setShowCaps(false); return; }
+    fetchCaps.mutate();
+  };
+
+  const formatContextWindow = (ctx: number) => {
+    if (ctx >= 1000000) return `${(ctx / 1000000).toFixed(0)}M`;
+    if (ctx >= 1000) return `${(ctx / 1000).toFixed(0)}K`;
+    return ctx.toString();
+  };
 
   return (
     <div className="glass-card" style={{ padding: 16 }}>
@@ -76,30 +107,61 @@ function AgentCard({ agent, nowMs }: { agent: Agent; nowMs: number }) {
         <span style={{ fontSize: 11, color: '#888', marginLeft: 'auto' }}>{agent.type}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 11, marginBottom: 10 }}>
         <div>
-          <div style={{ color: '#666', marginBottom: 2 }}>Status</div>
+          <div style={{ color: '#555', marginBottom: 1 }}>Status</div>
           <div style={{ color: statusColor, fontWeight: 600 }}>{agent.status}</div>
         </div>
         <div>
-          <div style={{ color: '#666', marginBottom: 2 }}>Role</div>
-          <div style={{ color: '#ccc' }}>{agent.role_id || '—'}</div>
+          <div style={{ color: '#555', marginBottom: 1 }}>Runner</div>
+          <div style={{ color: meta.color, fontWeight: 600 }}>{meta.label}</div>
+        </div>
+        <div>
+          <div style={{ color: '#555', marginBottom: 1 }}>Model</div>
+          <div style={{ color: '#ccc', fontWeight: 500, fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {capManifest?.model_family || agent.config?.model || '—'}
+          </div>
         </div>
       </div>
 
-      {agent.specialties.length > 0 && (
-        <div style={{ marginTop: 10, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {agent.specialties.map((s) => (
-            <span key={s} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(0,242,234,0.1)', color: '#00f2ea' }}>{s}</span>
+      {/* Task types from agent specialties or manifest */}
+      {((agent.specialties?.length ?? 0) > 0 || (capManifest?.task_types?.length ?? 0) > 0) && (
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 8 }}>
+          {(capManifest?.task_types?.length ? capManifest.task_types : agent.specialties ?? []).slice(0, 6).map((t) => (
+            <span key={t} style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 500 }}>{t}</span>
           ))}
         </div>
       )}
 
-      {agent.last_heartbeat_at && (
-        <div style={{ marginTop: 8, fontSize: 10, color: '#555' }}>
-          Last heartbeat: {new Date(agent.last_heartbeat_at).toLocaleString()}
+      {/* Feature badges from manifest */}
+      {capManifest && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+          {capManifest.supports_thinking && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(0,255,170,0.12)', color: '#00ffaa' }}>Thinking</span>}
+          {capManifest.supports_multimodal && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,159,67,0.12)', color: '#ff9f43' }}>Multimodal</span>}
+          {capManifest.supports_streaming && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(0,242,234,0.12)', color: '#00f2ea' }}>Streaming</span>}
+          {capManifest.context_window > 0 && (
+            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(255,238,0,0.1)', color: '#ffee00' }}>Ctx {formatContextWindow(capManifest.context_window)}</span>
+          )}
         </div>
       )}
+
+      {agent.last_heartbeat_at && (
+        <div style={{ fontSize: 9, color: '#444', marginBottom: 6 }}>
+          heartbeat: {new Date(agent.last_heartbeat_at).toLocaleTimeString()}
+        </div>
+      )}
+
+      <button
+        onClick={handleViewCaps}
+        style={{
+          fontSize: 10, padding: '3px 10px', borderRadius: 4,
+          background: showCaps ? 'rgba(167,139,250,0.2)' : 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          color: '#a78bfa', cursor: 'pointer', marginTop: 4,
+        }}
+      >
+        {fetchCaps.isPending ? 'Loading...' : showCaps ? 'Hide Capabilities' : 'View Capabilities'}
+      </button>
     </div>
   );
 }
@@ -165,3 +227,170 @@ function RoutingPreview({ orgId }: { orgId: string }) {
     </div>
   );
 }
+
+// --- HTTP/MCP Agent Registration Form ---
+
+function HTTPAgentForm({ orgId }: { orgId: string }) {
+  const [runnerType, setRunnerType] = useState<'http' | 'mcp'>('http');
+  const [agentName, setAgentName] = useState('');
+  const [endpoint, setEndpoint] = useState('');
+  const [authToken, setAuthToken] = useState('');
+  const [model, setModel] = useState('');
+  const [bodyTemplate, setBodyTemplate] = useState('');
+  const [outputPath, setOutputPath] = useState('');
+  const [timeoutMs, setTimeoutMs] = useState('300000');
+  const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const createAgent = useMutation({
+    mutationFn: (input: Parameters<typeof orgApi.createAgent>[1]) => orgApi.createAgent(orgId, input),
+    onSuccess: () => {
+      setSuccessMsg(`${runnerType.toUpperCase()} Agent registered successfully`);
+      setFormError('');
+      setAgentName('');
+      setEndpoint('');
+      setAuthToken('');
+      setModel('');
+      setBodyTemplate('');
+      setOutputPath('');
+      setTimeoutMs('300000');
+      setShowForm(false);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    },
+    onError: (err: Error) => {
+      setFormError(err.message);
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    if (!agentName.trim()) { setFormError('Agent name is required'); return; }
+    if (!endpoint.trim()) { setFormError('Endpoint URL is required'); return; }
+
+    const runnerConfig: Record<string, unknown> = {
+      endpoint: endpoint.trim(),
+      auth_token: authToken.trim() || undefined,
+      timeout_ms: parseInt(timeoutMs) || 300000,
+    };
+    if (model.trim()) runnerConfig.model = model.trim();
+    if (bodyTemplate.trim()) runnerConfig.body_template = bodyTemplate.trim();
+    if (outputPath.trim()) runnerConfig.output_path = outputPath.trim();
+    if (runnerType === 'mcp') {
+      runnerConfig.transport = 'http';
+      runnerConfig.tools_enabled = true;
+    }
+
+    createAgent.mutate({
+      name: agentName.trim(),
+      type: runnerType === 'http' ? 'http-agent' : 'mcp-agent',
+      runner_type: runnerType,
+      runner_config: JSON.stringify(runnerConfig),
+    });
+  };
+
+  return (
+    <div className="glass-card" style={{ padding: 20 }}>
+      {!showForm ? (
+        <button
+          onClick={() => setShowForm(true)}
+          style={{ background: 'transparent', border: '1px solid rgba(0,242,234,0.3)', color: '#00f2ea', borderRadius: 6, padding: '8px 20px', fontSize: 13, cursor: 'pointer' }}
+        >
+          + Register HTTP / MCP Agent
+        </button>
+      ) : (
+        <form onSubmit={handleSubmit}>
+          <h3 style={{ color: '#ff9f43', fontSize: 14, marginBottom: 16 }}>Register HTTP or MCP Agent</h3>
+
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <input type="radio" name="runnerType" value="http" checked={runnerType === 'http'} onChange={() => setRunnerType('http')} />
+              <span style={{ color: '#ff9f43', fontSize: 13 }}>HTTP Agent</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <input type="radio" name="runnerType" value="mcp" checked={runnerType === 'mcp'} onChange={() => setRunnerType('mcp')} />
+              <span style={{ color: '#a78bfa', fontSize: 13 }}>MCP Agent</span>
+            </label>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Agent Name *</label>
+              <input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="e.g., OpenAI GPT-4o" style={INPUT_STYLE} />
+            </div>
+
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>
+                Endpoint URL * <span style={{ color: '#666', fontSize: 11 }}>({runnerType === 'http' ? 'e.g., https://api.openai.com/v1/chat/completions' : 'e.g., http://localhost:3000/mcp'})</span>
+              </label>
+              <input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder={runnerType === 'http' ? 'https://api.openai.com/v1/chat/completions' : 'http://localhost:3000/mcp'} style={INPUT_STYLE} />
+            </div>
+
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Auth Token / API Key</label>
+              <input value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder="${OPENAI_API_KEY} or Bearer sk-..." type="password" style={INPUT_STYLE} />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Model Name</label>
+              <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={runnerType === 'http' ? 'gpt-4o' : 'claude-3'} style={INPUT_STYLE} />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Timeout (ms)</label>
+              <input value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} placeholder="300000" style={INPUT_STYLE} />
+            </div>
+
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Body Template (Go template syntax)</label>
+              <textarea
+                value={bodyTemplate}
+                onChange={(e) => setBodyTemplate(e.target.value)}
+                placeholder={'{\n  "model": "{{.Context.model}}",\n  "messages": [{"role": "user", "content": {{.Context.prompt | toJSON}}}]\n}'}
+                rows={4}
+                style={{ ...INPUT_STYLE, resize: 'vertical' as const, fontFamily: 'monospace', fontSize: 11 }}
+              />
+            </div>
+
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Output Path (dot-notation)</label>
+              <input value={outputPath} onChange={(e) => setOutputPath(e.target.value)} placeholder="choices[0].message.content" style={INPUT_STYLE} />
+            </div>
+          </div>
+
+          {formError && <div style={{ color: '#ff0050', fontSize: 12, marginTop: 12 }}>{formError}</div>}
+          {successMsg && <div style={{ color: '#00ffaa', fontSize: 12, marginTop: 12 }}>{successMsg}</div>}
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+            <button
+              type="submit"
+              disabled={createAgent.isPending}
+              style={{ background: runnerType === 'http' ? '#ff9f43' : '#a78bfa', color: '#0a0b10', border: 'none', borderRadius: 6, padding: '8px 20px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
+            >
+              {createAgent.isPending ? 'Registering...' : 'Register Agent'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#888', borderRadius: 6, padding: '8px 20px', cursor: 'pointer', fontSize: 13 }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+const INPUT_STYLE: React.CSSProperties = {
+  background: '#1a1c28',
+  border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: 6,
+  padding: '8px 12px',
+  color: '#ccc',
+  fontSize: 13,
+  width: '100%',
+  boxSizing: 'border-box' as const,
+};
