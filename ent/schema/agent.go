@@ -29,6 +29,14 @@ func (Agent) Fields() []ent.Field {
 			Default("[]"),
 		field.Text("config").
 			Default("{}"),
+		// runner_type replaces hardcoded agent type parsing
+		field.Text("runner_type").
+			Default("cli"),
+		// runner_config stores JSON config specific to each runner type
+		// e.g., for CLI: {"base_path": "...", "main_repo": "..."}
+		// for HTTP: {"endpoint": "...", "api_key_ref": "..."}
+		field.Text("runner_config").
+			Default("{}"),
 		field.Time("last_heartbeat_at").
 			Optional(),
 		field.Time("created_at").
@@ -49,5 +57,9 @@ func (Agent) Indexes() []ent.Index {
 		index.Fields("status"),
 		index.Fields("type"),
 		index.Fields("name"),
+		// index on runner_type enables fast lookup by runtime type
+		index.Fields("runner_type"),
+		// Unique constraint: no two agents with the same name in the same org
+		index.Fields("org_id", "name").Unique(),
 	}
 }

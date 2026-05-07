@@ -20,6 +20,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/knowledge"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/registry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
@@ -67,6 +68,9 @@ type Server struct {
 
 	// Phase 6: template system
 	templateStore *template.Store
+
+	// multi-agent runner registry
+	runnerRegistry *registry.RunnerRegistry
 }
 
 // New creates a new Server instance.
@@ -727,6 +731,18 @@ func (s *Server) SetTaskRouter(r *router.Router) {
 	s.taskRouter = r
 }
 
+// SetRunnerRegistry injects the multi-agent Runner registry.
+// The registry should be initialized before calling this, after DB setup and
+// before starting background workers (heartbeat loop starts here).
+func (s *Server) SetRunnerRegistry(r *registry.RunnerRegistry) {
+	s.runnerRegistry = r
+}
+
+// RunnerRegistry returns the Runner registry if configured.
+func (s *Server) RunnerRegistry() *registry.RunnerRegistry {
+	return s.runnerRegistry
+}
+
 // SetCoordinationWorkers sets the coordination background workers.
 func (s *Server) SetCoordinationWorkers(orchestrator *FailureOrchestrator, retryW *RetryWorker, reviewW *ReviewWorker) {
 	s.failureOrchestrator = orchestrator
@@ -911,7 +927,7 @@ func (s *Server) handleCompatManualTriage(w http.ResponseWriter, r *http.Request
 		}
 		syncCompatPayloadState(payload, engine.StateTriage)
 		payload["coordination_stage"] = "triage"
-		_ = s.persistCompatPayload(ctx, id, payload)
+		s.persistCompatPayloadLogged(ctx, id, payload)
 	}
 
 	updatedTask, _ := s.repo.GetTaskByID(ctx, id)
@@ -1022,7 +1038,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		payload["dispatch_status"] = "failed"
 		payload["status"] = "ready"
 		payload["execution_session_id"] = nil
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateRetryWaiting
@@ -1049,7 +1065,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 			payload["dispatch_status"] = "completed"
 			payload["status"] = "verified"
 			payload["review_decision"] = firstCompatNonEmpty(readString(payload, "review_decision"), "approved")
-			_ = s.persistCompatPayload(ctx, taskID, payload)
+			s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 			result["status"] = "recovered"
 			result["new_state"] = engine.StateVerified
@@ -1066,7 +1082,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		payload["coordination_stage"] = "recovery"
 		payload["dispatch_status"] = "failed"
 		payload["status"] = "ready"
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateRetryWaiting
@@ -1076,7 +1092,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		// Already in retry_waiting but may be stuck by failed children
 		retiredCount := s.retireFailedChildren(ctx, taskID)
 		payload["auto_repair_count"] = 0
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateRetryWaiting
@@ -1095,7 +1111,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		payload["dispatch_status"] = "completed"
 		payload["status"] = "verified"
 		payload["execution_session_id"] = nil
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateVerified
@@ -1151,7 +1167,7 @@ func (s *Server) retireFailedChildren(ctx context.Context, parentTaskID string) 
 			payload["dispatch_status"] = "completed"
 			payload["status"] = "done"
 			payload["coordination_stage"] = "retired"
-			_ = s.persistCompatPayload(ctx, t.ID, payload)
+			s.persistCompatPayloadLogged(ctx, t.ID, payload)
 			retired++
 		}
 	}

@@ -20,6 +20,12 @@ import (
 
 var errCompatTaskNotFound = errors.New("task not found")
 
+const (
+	defaultExecutionTimeout    = 30 * time.Minute
+	executionHeartbeatInterval = 30 * time.Second
+	stalledHeartbeatThreshold  = 5 * time.Minute
+)
+
 func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry bool, requestedProjectID string) (*ent.Task, error) {
 	task, err := s.repo.GetTaskByID(ctx, taskID)
 	if err != nil {
@@ -128,7 +134,7 @@ func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry 
 	// PR-OPS-003: heartbeat and timeout tracking
 	payload["started_at"] = now.Format(time.RFC3339)
 	payload["last_heartbeat_at"] = now.Format(time.RFC3339)
-	payload["timeout_at"] = now.Add(30 * time.Minute).Format(time.RFC3339) // default 30min timeout
+	payload["timeout_at"] = now.Add(defaultExecutionTimeout).Format(time.RFC3339)
 	payload["stalled"] = false
 
 	payload["last_dispatch_error"] = nil
@@ -153,7 +159,11 @@ func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry 
 	}
 
 	if executionManager == nil || strings.TrimSpace(command) == "" {
-		reason := payload["execution_runtime"].(string) + " runtime command is not configured"
+		runtime, _ := payload["execution_runtime"].(string)
+		if runtime == "" {
+			runtime = "unknown"
+		}
+		reason := runtime + " runtime command is not configured"
 		s.finishCompatExecutionFailure(context.Background(), taskID, reason)
 		failedTask, reloadErr := s.repo.GetTaskByID(context.Background(), taskID)
 		if reloadErr != nil {
@@ -260,6 +270,13 @@ func (s *Server) persistCompatPayload(ctx context.Context, taskID string, payloa
 	return s.repo.UpdateTask(ctx, taskID, card)
 }
 
+// persistCompatPayloadLogged wraps persistCompatPayload with error logging.
+func (s *Server) persistCompatPayloadLogged(ctx context.Context, taskID string, payload map[string]interface{}) {
+	if err := s.persistCompatPayload(ctx, taskID, payload); err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to persist compat payload")
+	}
+}
+
 func (s *Server) runCompatExecution(executionManager *compatExecutionManager, taskID string, payload map[string]interface{}, transportType, command, shell string) {
 	// Create heartbeat context - will be cancelled when execution completes
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -281,41 +298,69 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 		return
 	}
 
-	executor, err := executionManager.executor(transportType)
-	if err != nil {
-		s.finishCompatExecutionFailure(ctx, taskID, err.Error())
-		return
+	ownerAgent := readString(payload, "owner_agent")
+
+	// Runner path: if a Runner is registered for this agent, use it.
+	// This is the preferred path for migrated agents. The compat fallback below
+	// handles agents not yet in the registry (e.g., during initial migration).
+	run := s.getRunnerForAgent(ownerAgent)
+
+	var execResult *transport.ExecutionResult
+	var execErr error
+
+	if run != nil {
+		// --- Runner execution path ---
+		s.logger.Info().Str("task_id", taskID).Str("agent", ownerAgent).Msg("executing via Runner interface")
+		s.runnerRegistry.SetRunning(ownerAgent, true)
+		defer s.runnerRegistry.SetRunning(ownerAgent, false)
+
+		runnerTask := s.buildRunnerTask(taskID, payload, executionManager)
+		runnerResult, runnerErr := run.Execute(ctx, runnerTask)
+		if runnerErr != nil {
+			s.logger.Error().Err(runnerErr).Str("task_id", taskID).Msg("runner execution error")
+		}
+
+		// Translate RunnerResult → transport.ExecutionResult
+		execResult, execErr = runnerResultToExecutionResult(runnerResult, runnerErr)
+	} else {
+		// --- v2 compat execution path (unchanged) ---
+		executor, err := executionManager.executor(transportType)
+		if err != nil {
+			s.finishCompatExecutionFailure(ctx, taskID, err.Error())
+			return
+		}
+
+		compatTask := s.mapCompatTask(task)
+		execConfig := &transport.TaskConfig{
+			TaskID:        taskID,
+			Transport:     transport.TransportType(firstCompatNonEmpty(transportType, string(transport.TransportCLI))),
+			WorkspacePath: firstCompatNonEmpty(readString(payload, "workspace_path"), s.mapTaskView(task).WorkspacePath),
+			ArtifactPath:  firstCompatNonEmpty(readString(payload, "artifact_path"), s.mapTaskView(task).ArtifactPath),
+			OutputPath:    executionManager.logPath(taskID),
+			FilesToModify: compatFilesToModify(payload),
+			Command:       command,
+			Shell:         shell,
+			Env:           buildCompatExecutionEnv(compatTask),
+			Context:       compatContextPayload(payload),
+		}
+		execResult, execErr = executor.Execute(ctx, execConfig)
 	}
 
-	compatTask := s.mapCompatTask(task)
-	execConfig := &transport.TaskConfig{
-		TaskID:        taskID,
-		Transport:     transport.TransportType(firstCompatNonEmpty(transportType, string(transport.TransportCLI))),
-		WorkspacePath: firstCompatNonEmpty(readString(payload, "workspace_path"), s.mapTaskView(task).WorkspacePath),
-		ArtifactPath:  firstCompatNonEmpty(readString(payload, "artifact_path"), s.mapTaskView(task).ArtifactPath),
-		OutputPath:    executionManager.logPath(taskID),
-		FilesToModify: compatFilesToModify(payload),
-		Command:       command,
-		Shell:         shell,
-		Env:           buildCompatExecutionEnv(compatTask),
-		Context:       compatContextPayload(payload),
-	}
-
-	result, execErr := executor.Execute(ctx, execConfig)
-	if execErr != nil || result == nil || !result.Success {
+	// --- common result handling (mirrors original) ---
+	if execErr != nil || execResult == nil || !execResult.Success {
 		// PR-1: System tasks (review, remediation) that fail only because the agent
 		// didn't write the expected report file should auto-create the report from
 		// execution output and proceed as success.
 		taskType := readString(payload, "type")
-		errMsg := compatExecutionError(execErr, result)
-		if IsSystemTaskType(taskType) && result != nil && strings.Contains(errMsg, "empty_artifact_match") {
-			if s.autoCreateSystemReport(executionManager, taskID, taskType, result.Output, payload) {
-				result = &transport.ExecutionResult{
+		errMsg := compatExecutionError(execErr, execResult)
+		if IsSystemTaskType(taskType) && execResult != nil && strings.Contains(errMsg, "empty_artifact_match") {
+			if s.autoCreateSystemReport(executionManager, taskID, taskType, execResult.Output, payload) {
+				execResult = &transport.ExecutionResult{
 					Success:  true,
 					ExitCode: 0,
-					Output:   result.Output,
+					Output:   execResult.Output,
 				}
-				if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, result); err != nil {
+				if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, execResult); err != nil {
 					s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to mark async execution success after report auto-creation")
 				}
 				return
@@ -326,7 +371,7 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 	}
 
 	// Pass execution result to success handler for review decision extraction
-	if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, result); err != nil {
+	if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, execResult); err != nil {
 		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to mark async execution success")
 	}
 }
@@ -335,7 +380,7 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 // PR-OPS-003: This provides true execution liveness tracking, not just a one-time write.
 // Uses UpdateHeartbeatOnly to avoid clobbering other concurrent edits.
 func (s *Server) runExecutionHeartbeat(ctx context.Context, taskID string) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(executionHeartbeatInterval)
 	defer ticker.Stop()
 
 	for {

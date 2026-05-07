@@ -159,7 +159,7 @@ func (r *ExecutionReaper) isZombie(t *ent.Task) bool {
 	// Heartbeat expiration threshold: 5 minutes without update
 	// This is shorter than the stale threshold because heartbeat
 	// should be updating every 30 seconds during active execution.
-	heartbeatThreshold := 5 * time.Minute
+	heartbeatThreshold := stalledHeartbeatThreshold
 	return time.Since(heartbeatTime) > heartbeatThreshold
 }
 

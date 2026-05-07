@@ -13,6 +13,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
 	"github.com/rs/zerolog"
 )
 
@@ -437,7 +438,7 @@ func (r *Repository) CheckAndPromoteParent(ctx context.Context, childID string) 
 
 	allDone := true
 	for _, c := range children {
-		if c.State != "done" {
+		if c.State != string(engine.StateDone) {
 			allDone = false
 			break
 		}
@@ -450,8 +451,8 @@ func (r *Repository) CheckAndPromoteParent(ctx context.Context, childID string) 
 	// All children complete — promote parent from running to verified
 	now := time.Now().UTC()
 	_, err = r.client.Task.Update().
-		Where(task.ID(child.ParentID), task.State("running")).
-		SetState("verified").
+		Where(task.ID(child.ParentID), task.State(string(engine.StateRunning))).
+		SetState(string(engine.StateVerified)).
 		SetDecompositionStatus("completed").
 		SetUpdatedAt(now).
 		Save(ctx)
@@ -855,5 +856,5 @@ func consumesRetry(reason string) bool {
 }
 
 func isTerminalState(state string) bool {
-	return state == "done" || state == "failed"
+	return state == string(engine.StateDone) || state == string(engine.StateFailed)
 }

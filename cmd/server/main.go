@@ -27,7 +27,9 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/auth"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/backup"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/registry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/runner"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/server"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
@@ -188,7 +190,13 @@ func main() {
 	}
 	_ = rbacMiddleware // Available for future endpoint protection
 
-	// Phase 5: Initialize intelligent router
+	// Initialize Runner registry and load agents from DB.
+	// The registry manages all registered Runner instances (CLIRunner, HTTPRunner, etc.)
+	// and provides heartbeat monitoring.
+	runnerReg := registry.New(log.Logger, client)
+
+	// Phase 5: Initialize intelligent router WITH the registry for v3 manifest-based scoring.
+	// The router uses EnhancedCapabilityMatcherV2 when the registry is available.
 	routingCfg := router.Config{
 		Strategy: router.Strategy(viper.GetString("routing.strategy")),
 		Fallback: router.Strategy(viper.GetString("routing.fallback")),
@@ -199,17 +207,54 @@ func main() {
 		},
 	}
 	orgSvc := org.NewService(client)
-	taskRouter := router.NewRouter(routingCfg, orgSvc, client, log.Logger)
+	taskRouter := router.NewRouter(routingCfg, orgSvc, client, log.Logger, runnerReg)
+	srv.SetRunnerRegistry(runnerReg)
 	srv.SetTaskRouter(taskRouter)
 
-	// Phase 6: Bootstrap default org and legacy agents for backward compatibility
+	// Phase 6: Bootstrap default org and legacy agents.
 	if err := server.Bootstrap(context.Background(), orgSvc, log.Logger); err != nil {
 		log.Error().Err(err).Msg("bootstrap failed (non-fatal)")
 	}
-	projectsConfig := loadCompatProjectsConfig()
-	if err := srv.ConfigureCompatProjects(projectsConfig); err != nil {
+	compatConfig := loadCompatProjectsConfig()
+	if err := srv.ConfigureCompatProjects(compatConfig); err != nil {
 		log.Fatal().Err(err).Msg("failed to configure projects")
 	}
+
+	// Seed the registry with agents from DB (once) and compat config (per project).
+	if len(compatConfig.Projects) > 0 {
+		defaultProj := compatConfig.Projects[0]
+		registryCfg := registry.RegistryConfig{
+			BasePath:     defaultProj.WorktreeBasePath,
+			MainRepo:     defaultProj.MainRepoPath,
+			ArtifactBase: defaultProj.ArtifactBasePath,
+		}
+		if err := runnerReg.LoadFromDB(context.Background(), registryCfg); err != nil {
+			log.Warn().Err(err).Msg("failed to load agents from DB")
+		}
+	}
+	for _, proj := range compatConfig.Projects {
+		for _, rt := range []struct {
+			id, name, cmd string
+		}{
+			{rtID(proj.ID, "claude"), proj.ID + "-claude", proj.ClaudeCommand},
+			{rtID(proj.ID, "gemini"), proj.ID + "-gemini", proj.GeminiCommand},
+			{rtID(proj.ID, "codex"), proj.ID + "-codex", proj.CodexCommand},
+		} {
+			if rt.cmd != "" && runnerReg.Get(rt.id) == nil {
+				cliRunner := runner.NewCLIRunner(runner.CLIRunnerConfig{
+					ID:       rt.id,
+					Name:     rt.name,
+					BasePath: proj.WorktreeBasePath,
+					MainRepo: proj.MainRepoPath,
+				})
+				runnerReg.Register(rt.id, cliRunner)
+				log.Info().Str("agent_id", rt.id).Str("project", proj.ID).Msg("registered compat agent as runner")
+			}
+		}
+	}
+
+	// Start heartbeat monitoring for all registered runners.
+	runnerReg.StartHeartbeat(context.Background())
 
 	// Register authentication routes
 	srv.RegisterAuthRoutes(srv.Handler().(*chi.Mux), tokenHandler, authMiddleware)
@@ -285,8 +330,8 @@ func main() {
 		}()
 	}
 
-	queueManager := server.NewProjectQueueManager(repo, log.Logger, projectsConfig.DefaultProjectID)
-	if err := queueManager.Start(queueCtx, projectsConfig.Projects); err != nil {
+	queueManager := server.NewProjectQueueManager(repo, log.Logger, compatConfig.DefaultProjectID)
+	if err := queueManager.Start(queueCtx, compatConfig.Projects); err != nil {
 		log.Fatal().Err(err).Msg("failed to start project queue manager")
 	}
 	srv.SetProjectQueueManager(queueManager)
@@ -431,4 +476,10 @@ func loadCompatProjectsConfig() server.CompatProjectsConfig {
 		DefaultProjectID: viper.GetString("projects.default"),
 		Projects:         projects,
 	}
+}
+
+// rtID constructs a runner/agent ID from project and runtime names.
+// Format: "projectID-agentType" (e.g., "tiktok_shop_xuanping-claude").
+func rtID(projectID, agentType string) string {
+	return projectID + "-" + agentType
 }

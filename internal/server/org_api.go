@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/registry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/runner"
 )
 
 // registerOrgRoutes registers organization management API routes.
@@ -56,6 +58,7 @@ func (s *Server) registerOrgRoutes(r chi.Router) {
 					r.Patch("/", s.handleUpdateAgent)
 					r.Delete("/", s.handleDeleteAgent)
 					r.Post("/heartbeat", s.handleAgentHeartbeat)
+					r.Get("/capabilities", s.handleGetAgentCapabilities)
 				})
 			})
 
@@ -255,6 +258,16 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
 		return
 	}
+
+	// Register the Runner in the registry after DB creation.
+	// This enables immediate execution of tasks by the newly created agent.
+	if s.runnerRegistry != nil {
+		if run := s.buildRunnerFromAgentView(a); run != nil {
+			s.runnerRegistry.Register(a.ID, run)
+			s.logger.Info().Str("agent_id", a.ID).Str("runner_type", a.RunnerType).Msg("agent runner registered via API")
+		}
+	}
+
 	s.writeJSON(w, http.StatusCreated, APIResponse{Success: true, Data: a})
 }
 
@@ -268,31 +281,109 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "agentID")
 	var input org.UpdateAgentInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: "invalid request body"})
 		return
 	}
-	a, err := s.orgSvc.UpdateAgent(r.Context(), chi.URLParam(r, "agentID"), input)
+	a, err := s.orgSvc.UpdateAgent(r.Context(), agentID, input)
 	if err != nil {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
 		return
 	}
+
+	// If runner config changed, rebuild and re-register the Runner.
+	if s.runnerRegistry != nil && (input.RunnerType != nil || input.RunnerConfig != nil) {
+		if run := s.buildRunnerFromAgentView(a); run != nil {
+			s.runnerRegistry.Register(agentID, run)
+			s.logger.Info().Str("agent_id", agentID).Msg("agent runner re-registered via API")
+		}
+	}
+
 	s.writeJSON(w, http.StatusOK, APIResponse{Success: true, Data: a})
 }
 
 func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
-	if err := s.orgSvc.DeleteAgent(r.Context(), chi.URLParam(r, "agentID")); err != nil {
+	agentID := chi.URLParam(r, "agentID")
+	if err := s.orgSvc.DeleteAgent(r.Context(), agentID); err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, APIResponse{Success: false, Error: err.Error()})
 		return
 	}
+
+	// Unregister the Runner from the registry after DB deletion.
+	if s.runnerRegistry != nil {
+		if entry := s.runnerRegistry.Unregister(agentID); entry != nil {
+			s.logger.Info().Str("agent_id", agentID).Msg("agent runner unregistered via API")
+		}
+	}
+
 	s.writeJSON(w, http.StatusOK, APIResponse{Success: true})
 }
 
 func (s *Server) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if err := s.orgSvc.UpdateAgentHeartbeat(r.Context(), chi.URLParam(r, "agentID")); err != nil {
+	agentID := chi.URLParam(r, "agentID")
+	if err := s.orgSvc.UpdateAgentHeartbeat(r.Context(), agentID); err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, APIResponse{Success: false, Error: err.Error()})
 		return
 	}
+
+	// Update registry heartbeat status.
+	if s.runnerRegistry != nil {
+		s.runnerRegistry.SetStatus(agentID, registry.StatusOnline)
+	}
+
 	s.writeJSON(w, http.StatusOK, APIResponse{Success: true})
+}
+
+func (s *Server) handleGetAgentCapabilities(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "agentID")
+
+	if s.runnerRegistry == nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, APIResponse{Success: false, Error: "registry not configured"})
+		return
+	}
+
+	manifest, err := s.runnerRegistry.Manifest(r.Context(), agentID)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{Success: false, Error: "agent not registered or no capabilities"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{Success: true, Data: manifest})
+}
+
+type runnerConfigExtract struct {
+	BasePath     string `json:"base_path"`
+	MainRepo     string `json:"main_repo"`
+	ArtifactBase string `json:"artifact_base"`
+}
+
+func (s *Server) buildRunnerFromAgentView(a *org.AgentView) runner.Runner {
+	rt := registry.RunnerTypeFromString(a.RunnerType)
+	cfg := registry.RegistryConfig{}
+	var runnerCfg json.RawMessage
+
+	if a.RunnerConfig != "" && a.RunnerConfig != "{}" {
+		runnerCfg = json.RawMessage(a.RunnerConfig)
+		var ext runnerConfigExtract
+		if err := json.Unmarshal(runnerCfg, &ext); err == nil {
+			cfg.BasePath = ext.BasePath
+			cfg.MainRepo = ext.MainRepo
+			cfg.ArtifactBase = ext.ArtifactBase
+		}
+	}
+
+	built, err := registry.BuildRunner(registry.BuilderInput{
+		AgentID:        a.ID,
+		AgentName:      a.Name,
+		RunnerType:     rt,
+		Config:         runnerCfg,
+		RegistryConfig: cfg,
+	})
+	if err != nil {
+		s.logger.Warn().Err(err).Str("agent_id", a.ID).Str("runner_type", a.RunnerType).Msg("failed to build runner")
+		return nil
+	}
+	return built
 }

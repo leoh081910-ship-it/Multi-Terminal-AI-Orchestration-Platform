@@ -277,18 +277,24 @@ func (s *Service) DeleteRole(ctx context.Context, id string) error {
 // --- Agent ---
 
 type CreateAgentInput struct {
-	Name       string   `json:"name"`
-	Type       string   `json:"type"`
-	RoleID     string   `json:"role_id,omitempty"`
-	Specialties []string `json:"specialties,omitempty"`
-	Config     map[string]string `json:"config,omitempty"`
+	Name        string            `json:"name"`
+	Type        string            `json:"type"`
+	RoleID      string            `json:"role_id,omitempty"`
+	Specialties []string          `json:"specialties,omitempty"`
+	Config      map[string]string `json:"config,omitempty"`
+	// runner type and config
+	RunnerType  string `json:"runner_type,omitempty"`
+	RunnerConfig string `json:"runner_config,omitempty"`
 }
 
 type UpdateAgentInput struct {
-	Status     *string           `json:"status,omitempty"`
-	RoleID     *string           `json:"role_id,omitempty"`
+	Status      *string           `json:"status,omitempty"`
+	RoleID      *string           `json:"role_id,omitempty"`
 	Specialties []string          `json:"specialties,omitempty"`
-	Config     map[string]string `json:"config,omitempty"`
+	Config      map[string]string `json:"config,omitempty"`
+	// runner type and config
+	RunnerType  *string `json:"runner_type,omitempty"`
+	RunnerConfig *string `json:"runner_config,omitempty"`
 }
 
 type AgentView struct {
@@ -300,6 +306,9 @@ type AgentView struct {
 	Status          string            `json:"status"`
 	Specialties     []string          `json:"specialties"`
 	Config          map[string]string `json:"config"`
+	// runner fields
+	RunnerType      string            `json:"runner_type"`
+	RunnerConfig    string            `json:"runner_config"`
 	LastHeartbeatAt time.Time         `json:"last_heartbeat_at,omitempty"`
 	CreatedAt       time.Time         `json:"created_at"`
 }
@@ -314,6 +323,22 @@ func (s *Service) CreateAgent(ctx context.Context, orgID string, input CreateAge
 	specJSON, _ := json.Marshal(input.Specialties)
 	cfgJSON, _ := json.Marshal(input.Config)
 	id := uuid.New().String()
+
+	runnerConfigJSON := input.RunnerConfig
+	if runnerConfigJSON == "" {
+		rc := map[string]string{
+			"command": "",
+			"shell":   "",
+		}
+		b, _ := json.Marshal(rc)
+		runnerConfigJSON = string(b)
+	}
+
+	runnerType := input.RunnerType
+	if runnerType == "" {
+		runnerType = "cli"
+	}
+
 	a, err := s.client.Agent.Create().
 		SetID(id).
 		SetOrgID(orgID).
@@ -322,6 +347,8 @@ func (s *Service) CreateAgent(ctx context.Context, orgID string, input CreateAge
 		SetNillableRoleID(nstr(input.RoleID)).
 		SetSpecialties(string(specJSON)).
 		SetConfig(string(cfgJSON)).
+		SetRunnerType(runnerType).
+		SetRunnerConfig(runnerConfigJSON).
 		Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create agent: %w", err)
@@ -367,6 +394,13 @@ func (s *Service) UpdateAgent(ctx context.Context, id string, input UpdateAgentI
 	if input.Config != nil {
 		cfgJSON, _ := json.Marshal(input.Config)
 		u.SetConfig(string(cfgJSON))
+	}
+	// runner type and config
+	if input.RunnerType != nil {
+		u.SetRunnerType(*input.RunnerType)
+	}
+	if input.RunnerConfig != nil {
+		u.SetRunnerConfig(*input.RunnerConfig)
 	}
 	a, err := u.Save(ctx)
 	if err != nil {
@@ -455,6 +489,8 @@ func agentToView(a *ent.Agent) *AgentView {
 		Status:          a.Status,
 		Specialties:     spec,
 		Config:          cfg,
+		RunnerType:      a.RunnerType,
+		RunnerConfig:    a.RunnerConfig,
 		LastHeartbeatAt: a.LastHeartbeatAt,
 		CreatedAt:       a.CreatedAt,
 	}

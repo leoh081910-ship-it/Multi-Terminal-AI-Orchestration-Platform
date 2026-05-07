@@ -10,6 +10,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/mergequeue"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
+	"github.com/rs/zerolog/log"
 )
 
 type MergeQueueRepositoryAdapter struct {
@@ -118,7 +119,9 @@ func (a *MergeQueueRepositoryAdapter) UpdateTaskState(ctx context.Context, taskI
 
 	// Phase 2: check if parent should be auto-promoted when child reaches done
 	if toState == engine.StateDone {
-		_ = a.repo.CheckAndPromoteParent(ctx, taskID)
+		if err := a.repo.CheckAndPromoteParent(ctx, taskID); err != nil {
+			log.Error().Err(err).Str("task_id", taskID).Msg("failed to promote parent task")
+		}
 	}
 
 	return nil

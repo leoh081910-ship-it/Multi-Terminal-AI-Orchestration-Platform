@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
 	"github.com/rs/zerolog"
 )
 
@@ -151,7 +152,7 @@ func (mq *MergeQueue) processNextTask(ctx context.Context) error {
 	}
 
 	if len(deps) > 0 {
-		allDone, err := mq.repo.CheckTasksInState(ctx, deps, "done")
+		allDone, err := mq.repo.CheckTasksInState(ctx, deps, string(engine.StateDone))
 		if err != nil {
 			return fmt.Errorf("failed to check dependency states: %w", err)
 		}
@@ -176,7 +177,7 @@ func (mq *MergeQueue) executeMerge(ctx context.Context, task TaskInfo) error {
 
 	// Copy artifacts to main checkout
 	if err := mq.copyArtifactsToMainCheckout(task); err != nil {
-		if updateErr := mq.repo.UpdateTaskState(ctx, task.ID, "verified", "apply_failed", err.Error()); updateErr != nil {
+		if updateErr := mq.repo.UpdateTaskState(ctx, task.ID, string(engine.StateVerified), string(engine.StateApplyFailed), err.Error()); updateErr != nil {
 			mq.logger.Error().Err(updateErr).Str("task_id", task.ID).Msg("Failed to update task state to apply_failed")
 		}
 		return fmt.Errorf("failed to copy artifacts: %w", err)
@@ -184,7 +185,7 @@ func (mq *MergeQueue) executeMerge(ctx context.Context, task TaskInfo) error {
 
 	// Run git add
 	if err := mq.runGitCommand("add", "."); err != nil {
-		if updateErr := mq.repo.UpdateTaskState(ctx, task.ID, "verified", "apply_failed", err.Error()); updateErr != nil {
+		if updateErr := mq.repo.UpdateTaskState(ctx, task.ID, string(engine.StateVerified), string(engine.StateApplyFailed), err.Error()); updateErr != nil {
 			mq.logger.Error().Err(updateErr).Str("task_id", task.ID).Msg("Failed to update task state to apply_failed")
 		}
 		return fmt.Errorf("failed to run git add: %w", err)
@@ -194,7 +195,7 @@ func (mq *MergeQueue) executeMerge(ctx context.Context, task TaskInfo) error {
 	commitMsg := fmt.Sprintf("Merge task %s", task.ID)
 	if err := mq.runGitCommand("commit", "-m", commitMsg); err != nil {
 		if !isGitNoChangesError(err) {
-			if updateErr := mq.repo.UpdateTaskState(ctx, task.ID, "verified", "apply_failed", err.Error()); updateErr != nil {
+			if updateErr := mq.repo.UpdateTaskState(ctx, task.ID, string(engine.StateVerified), string(engine.StateApplyFailed), err.Error()); updateErr != nil {
 				mq.logger.Error().Err(updateErr).Str("task_id", task.ID).Msg("Failed to update task state to apply_failed")
 			}
 			return fmt.Errorf("failed to run git commit: %w", err)
@@ -205,12 +206,12 @@ func (mq *MergeQueue) executeMerge(ctx context.Context, task TaskInfo) error {
 	}
 
 	// Update task state to 'merged' only after commit succeeds.
-	if err := mq.repo.UpdateTaskState(ctx, task.ID, "verified", "merged", ""); err != nil {
+	if err := mq.repo.UpdateTaskState(ctx, task.ID, string(engine.StateVerified), string(engine.StateMerged), ""); err != nil {
 		return fmt.Errorf("failed to update task state to merged: %w", err)
 	}
 
 	// Update task state to 'done'
-	if err := mq.repo.UpdateTaskState(ctx, task.ID, "merged", "done", ""); err != nil {
+	if err := mq.repo.UpdateTaskState(ctx, task.ID, string(engine.StateMerged), string(engine.StateDone), ""); err != nil {
 		return fmt.Errorf("failed to update task state to done: %w", err)
 	}
 

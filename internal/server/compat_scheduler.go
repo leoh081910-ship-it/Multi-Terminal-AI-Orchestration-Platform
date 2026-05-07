@@ -1180,9 +1180,6 @@ func readIntDefault(payload map[string]interface{}, fallback int, key string) in
 func compatWorkflowState(status, dispatchStatus string) string {
 	switch status {
 	case "assigned":
-		if dispatchStatus == "pending" {
-			return engine.StateRouted
-		}
 		return engine.StateRouted
 	case "in_progress":
 		if dispatchStatus == "dispatched" {
