@@ -15,6 +15,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/transport"
 )
 
@@ -278,18 +279,20 @@ func (s *Server) persistCompatPayloadLogged(ctx context.Context, taskID string, 
 }
 
 func (s *Server) runCompatExecution(executionManager *compatExecutionManager, taskID string, payload map[string]interface{}, transportType, command, shell string) {
+	traceID := readString(payload, "execution_session_id")
+	startTime := time.Now()
+
 	// Create heartbeat context - will be cancelled when execution completes
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 	defer heartbeatCancel()
 
-	// PR-OPS-003: Start heartbeat updater goroutine (lightweight, only updates last_heartbeat_at)
 	go s.runExecutionHeartbeat(heartbeatCtx, taskID)
 
 	ctx := context.Background()
 
 	task, err := s.repo.GetTaskByID(ctx, taskID)
 	if err != nil || task == nil {
-		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to load task before async execution")
+		s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to load task before async execution")
 		return
 	}
 
@@ -310,14 +313,14 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 
 	if run != nil {
 		// --- Runner execution path ---
-		s.logger.Info().Str("task_id", taskID).Str("agent", ownerAgent).Msg("executing via Runner interface")
+		s.logger.Info().Str("task_id", taskID).Str("trace_id", traceID).Str("agent", ownerAgent).Msg("executing via Runner interface")
 		s.runnerRegistry.SetRunning(ownerAgent, true)
 		defer s.runnerRegistry.SetRunning(ownerAgent, false)
 
 		runnerTask := s.buildRunnerTask(taskID, payload, executionManager)
 		runnerResult, runnerErr := run.Execute(ctx, runnerTask)
 		if runnerErr != nil {
-			s.logger.Error().Err(runnerErr).Str("task_id", taskID).Msg("runner execution error")
+			s.logger.Error().Err(runnerErr).Str("task_id", taskID).Str("trace_id", traceID).Msg("runner execution error")
 		}
 
 		// Translate RunnerResult → transport.ExecutionResult
@@ -346,12 +349,33 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 		execResult, execErr = executor.Execute(ctx, execConfig)
 	}
 
-	// --- common result handling (mirrors original) ---
+	// --- common result handling ---
+	execDuration := time.Since(startTime).Seconds()
+	taskType := readString(payload, "type")
+	runnerType := "compat"
+	if run != nil {
+		runnerType = string(run.Type())
+	}
+
 	if execErr != nil || execResult == nil || !execResult.Success {
-		// PR-1: System tasks (review, remediation) that fail only because the agent
-		// didn't write the expected report file should auto-create the report from
-		// execution output and proceed as success.
-		taskType := readString(payload, "type")
+		telemetry.AgentRequestsTotal.WithLabelValues(ownerAgent, runnerType, taskType, "failure").Inc()
+		telemetry.AgentDurationSeconds.WithLabelValues(ownerAgent, runnerType).Observe(execDuration)
+
+		s.recordAgentCallAsync(context.Background(), &store.AgentCallRecord{
+			ID:           uuid.NewString(),
+			TaskID:       taskID,
+			AgentID:      ownerAgent,
+			RunnerType:   runnerType,
+			TaskType:     taskType,
+			TraceID:      traceID,
+			Status:       "failure",
+			ExitCode:     compatDispatchExitCode(execResult, execErr),
+			ErrorMessage: compatDispatchErrorMessage(execResult, execErr),
+			DurationMs:   time.Since(startTime).Milliseconds(),
+			StartedAt:    startTime,
+			FinishedAt:   time.Now(),
+		})
+
 		errMsg := compatExecutionError(execErr, execResult)
 		if IsSystemTaskType(taskType) && execResult != nil && strings.Contains(errMsg, "empty_artifact_match") {
 			if s.autoCreateSystemReport(executionManager, taskID, taskType, execResult.Output, payload) {
@@ -361,7 +385,7 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 					Output:   execResult.Output,
 				}
 				if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, execResult); err != nil {
-					s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to mark async execution success after report auto-creation")
+					s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to mark async execution success after report auto-creation")
 				}
 				return
 			}
@@ -370,9 +394,26 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 		return
 	}
 
-	// Pass execution result to success handler for review decision extraction
+	telemetry.AgentRequestsTotal.WithLabelValues(ownerAgent, runnerType, taskType, "success").Inc()
+	telemetry.AgentDurationSeconds.WithLabelValues(ownerAgent, runnerType).Observe(execDuration)
+
+	s.recordAgentCallAsync(context.Background(), &store.AgentCallRecord{
+		ID:            uuid.NewString(),
+		TaskID:        taskID,
+		AgentID:       ownerAgent,
+		RunnerType:    runnerType,
+		TaskType:      taskType,
+		TraceID:       traceID,
+		Status:        "success",
+		ExitCode:      execResult.ExitCode,
+		OutputSummary: compatOutputSummaryFromTransport(execResult),
+		DurationMs:    time.Since(startTime).Milliseconds(),
+		StartedAt:     startTime,
+		FinishedAt:    time.Now(),
+	})
+
 	if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, execResult); err != nil {
-		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to mark async execution success")
+		s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to mark async execution success")
 	}
 }
 

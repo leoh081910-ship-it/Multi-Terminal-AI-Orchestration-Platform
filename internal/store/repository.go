@@ -3,14 +3,17 @@ package store
 
 import (
 	"context"
-	"database/sql"
+	dbsql "database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
+
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agentcall"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
@@ -112,12 +115,12 @@ type EventData struct {
 // Repository wraps ent.Client and provides transactional CRUD operations.
 type Repository struct {
 	client *ent.Client
-	sqlDB  *sql.DB
+	sqlDB  *dbsql.DB
 	logger *zerolog.Logger
 }
 
 // NewRepository creates a new Repository instance.
-func NewRepository(client *ent.Client, sqlDB *sql.DB, logger *zerolog.Logger) *Repository {
+func NewRepository(client *ent.Client, sqlDB *dbsql.DB, logger *zerolog.Logger) *Repository {
 	return &Repository{
 		client: client,
 		sqlDB:  sqlDB,
@@ -131,7 +134,7 @@ func (r *Repository) Client() *ent.Client {
 }
 
 // DB returns the underlying sql.DB for direct database access.
-func (r *Repository) DB() *sql.DB {
+func (r *Repository) DB() *dbsql.DB {
 	return r.sqlDB
 }
 
@@ -690,6 +693,78 @@ func (r *Repository) SealWave(ctx context.Context, dispatchRef string, waveNum i
 	}
 
 	return nil
+}
+
+// AgentCallRecord holds the data for recording an agent execution.
+type AgentCallRecord struct {
+	ID            string
+	TaskID        string
+	AgentID       string
+	RunnerType    string
+	TaskType      string
+	TraceID       string
+	Status        string // "success", "failure", "timeout"
+	ExitCode      int
+	ErrorMessage  string
+	OutputSummary string
+	DurationMs    int64
+	StartedAt     time.Time
+	FinishedAt    time.Time
+}
+
+// RecordAgentCall persists an agent execution record.
+func (r *Repository) RecordAgentCall(ctx context.Context, rec *AgentCallRecord) error {
+	create := r.client.AgentCall.Create().
+		SetID(rec.ID).
+		SetTaskID(rec.TaskID).
+		SetAgentID(rec.AgentID).
+		SetRunnerType(rec.RunnerType).
+		SetTaskType(rec.TaskType).
+		SetStatus(rec.Status).
+		SetExitCode(rec.ExitCode).
+		SetDurationMs(rec.DurationMs).
+		SetStartedAt(rec.StartedAt).
+		SetFinishedAt(rec.FinishedAt)
+
+	if rec.TraceID != "" {
+		create.SetTraceID(rec.TraceID)
+	}
+	if rec.ErrorMessage != "" {
+		create.SetErrorMessage(rec.ErrorMessage)
+	}
+	if rec.OutputSummary != "" {
+		create.SetOutputSummary(rec.OutputSummary)
+	}
+
+	_, err := create.Save(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to record agent call: %w", err)
+	}
+	return nil
+}
+
+// ListAgentCallsByTask returns all agent call records for a given task, ordered by started_at desc.
+func (r *Repository) ListAgentCallsByTask(ctx context.Context, taskID string) ([]*ent.AgentCall, error) {
+	calls, err := r.client.AgentCall.Query().
+		Where(agentcall.TaskID(taskID)).
+		Order(agentcall.ByStartedAt(sql.OrderDesc())).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agent calls: %w", err)
+	}
+	return calls, nil
+}
+
+// ListAgentCallsByTrace returns all agent call records for a given trace ID.
+func (r *Repository) ListAgentCallsByTrace(ctx context.Context, traceID string) ([]*ent.AgentCall, error) {
+	calls, err := r.client.AgentCall.Query().
+		Where(agentcall.TraceID(traceID)).
+		Order(agentcall.ByStartedAt(sql.OrderDesc())).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agent calls by trace: %w", err)
+	}
+	return calls, nil
 }
 
 // Close closes the database connection.

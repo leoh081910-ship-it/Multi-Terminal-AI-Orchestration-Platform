@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agentcall"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/apitoken"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
@@ -18,6 +19,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/schema"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/tasktemplate"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
@@ -51,10 +53,32 @@ func init() {
 	agentDescConfig := agentFields[7].Descriptor()
 	// agent.DefaultConfig holds the default value on creation for the config field.
 	agent.DefaultConfig = agentDescConfig.Default.(string)
+	// agentDescRunnerType is the schema descriptor for runner_type field.
+	agentDescRunnerType := agentFields[8].Descriptor()
+	// agent.DefaultRunnerType holds the default value on creation for the runner_type field.
+	agent.DefaultRunnerType = agentDescRunnerType.Default.(string)
+	// agentDescRunnerConfig is the schema descriptor for runner_config field.
+	agentDescRunnerConfig := agentFields[9].Descriptor()
+	// agent.DefaultRunnerConfig holds the default value on creation for the runner_config field.
+	agent.DefaultRunnerConfig = agentDescRunnerConfig.Default.(string)
 	// agentDescCreatedAt is the schema descriptor for created_at field.
-	agentDescCreatedAt := agentFields[9].Descriptor()
+	agentDescCreatedAt := agentFields[11].Descriptor()
 	// agent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	agent.DefaultCreatedAt = agentDescCreatedAt.Default.(func() time.Time)
+	agentcallFields := schema.AgentCall{}.Fields()
+	_ = agentcallFields
+	// agentcallDescExitCode is the schema descriptor for exit_code field.
+	agentcallDescExitCode := agentcallFields[7].Descriptor()
+	// agentcall.DefaultExitCode holds the default value on creation for the exit_code field.
+	agentcall.DefaultExitCode = agentcallDescExitCode.Default.(int)
+	// agentcallDescDurationMs is the schema descriptor for duration_ms field.
+	agentcallDescDurationMs := agentcallFields[10].Descriptor()
+	// agentcall.DefaultDurationMs holds the default value on creation for the duration_ms field.
+	agentcall.DefaultDurationMs = agentcallDescDurationMs.Default.(int64)
+	// agentcallDescCreatedAt is the schema descriptor for created_at field.
+	agentcallDescCreatedAt := agentcallFields[13].Descriptor()
+	// agentcall.DefaultCreatedAt holds the default value on creation for the created_at field.
+	agentcall.DefaultCreatedAt = agentcallDescCreatedAt.Default.(func() time.Time)
 	contextentryFields := schema.ContextEntry{}.Fields()
 	_ = contextentryFields
 	// contextentryDescUpdatedAt is the schema descriptor for updated_at field.
@@ -183,6 +207,72 @@ func init() {
 	taskDescDecompositionStatus := taskFields[19].Descriptor()
 	// task.DefaultDecompositionStatus holds the default value on creation for the decomposition_status field.
 	task.DefaultDecompositionStatus = taskDescDecompositionStatus.Default.(string)
+	tasktemplateFields := schema.TaskTemplate{}.Fields()
+	_ = tasktemplateFields
+	// tasktemplateDescName is the schema descriptor for name field.
+	tasktemplateDescName := tasktemplateFields[1].Descriptor()
+	// tasktemplate.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	tasktemplate.NameValidator = func() func(string) error {
+		validators := tasktemplateDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// tasktemplateDescProjectID is the schema descriptor for project_id field.
+	tasktemplateDescProjectID := tasktemplateFields[3].Descriptor()
+	// tasktemplate.ProjectIDValidator is a validator for the "project_id" field. It is called by the builders before save.
+	tasktemplate.ProjectIDValidator = tasktemplateDescProjectID.Validators[0].(func(string) error)
+	// tasktemplateDescOwnerAgent is the schema descriptor for owner_agent field.
+	tasktemplateDescOwnerAgent := tasktemplateFields[4].Descriptor()
+	// tasktemplate.DefaultOwnerAgent holds the default value on creation for the owner_agent field.
+	tasktemplate.DefaultOwnerAgent = tasktemplateDescOwnerAgent.Default.(string)
+	// tasktemplate.OwnerAgentValidator is a validator for the "owner_agent" field. It is called by the builders before save.
+	tasktemplate.OwnerAgentValidator = tasktemplateDescOwnerAgent.Validators[0].(func(string) error)
+	// tasktemplateDescTaskType is the schema descriptor for task_type field.
+	tasktemplateDescTaskType := tasktemplateFields[5].Descriptor()
+	// tasktemplate.DefaultTaskType holds the default value on creation for the task_type field.
+	tasktemplate.DefaultTaskType = tasktemplateDescTaskType.Default.(string)
+	// tasktemplate.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
+	tasktemplate.TaskTypeValidator = tasktemplateDescTaskType.Validators[0].(func(string) error)
+	// tasktemplateDescPriority is the schema descriptor for priority field.
+	tasktemplateDescPriority := tasktemplateFields[6].Descriptor()
+	// tasktemplate.DefaultPriority holds the default value on creation for the priority field.
+	tasktemplate.DefaultPriority = tasktemplateDescPriority.Default.(int)
+	// tasktemplateDescWorkDir is the schema descriptor for work_dir field.
+	tasktemplateDescWorkDir := tasktemplateFields[8].Descriptor()
+	// tasktemplate.WorkDirValidator is a validator for the "work_dir" field. It is called by the builders before save.
+	tasktemplate.WorkDirValidator = tasktemplateDescWorkDir.Validators[0].(func(string) error)
+	// tasktemplateDescTimeoutSec is the schema descriptor for timeout_sec field.
+	tasktemplateDescTimeoutSec := tasktemplateFields[9].Descriptor()
+	// tasktemplate.DefaultTimeoutSec holds the default value on creation for the timeout_sec field.
+	tasktemplate.DefaultTimeoutSec = tasktemplateDescTimeoutSec.Default.(int)
+	// tasktemplateDescCreatedBy is the schema descriptor for created_by field.
+	tasktemplateDescCreatedBy := tasktemplateFields[13].Descriptor()
+	// tasktemplate.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	tasktemplate.CreatedByValidator = tasktemplateDescCreatedBy.Validators[0].(func(string) error)
+	// tasktemplateDescCreatedAt is the schema descriptor for created_at field.
+	tasktemplateDescCreatedAt := tasktemplateFields[14].Descriptor()
+	// tasktemplate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tasktemplate.DefaultCreatedAt = tasktemplateDescCreatedAt.Default.(func() time.Time)
+	// tasktemplateDescUpdatedAt is the schema descriptor for updated_at field.
+	tasktemplateDescUpdatedAt := tasktemplateFields[15].Descriptor()
+	// tasktemplate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tasktemplate.DefaultUpdatedAt = tasktemplateDescUpdatedAt.Default.(func() time.Time)
+	// tasktemplate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tasktemplate.UpdateDefaultUpdatedAt = tasktemplateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tasktemplateDescID is the schema descriptor for id field.
+	tasktemplateDescID := tasktemplateFields[0].Descriptor()
+	// tasktemplate.IDValidator is a validator for the "id" field. It is called by the builders before save.
+	tasktemplate.IDValidator = tasktemplateDescID.Validators[0].(func(string) error)
 	teamFields := schema.Team{}.Fields()
 	_ = teamFields
 	// teamDescCreatedAt is the schema descriptor for created_at field.

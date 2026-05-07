@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agentcall"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/apitoken"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/contextentry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/department"
@@ -27,6 +28,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/permission"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/role"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/tasktemplate"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/team"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/user"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
@@ -41,6 +43,8 @@ type Client struct {
 	APIToken *APITokenClient
 	// Agent is the client for interacting with the Agent builders.
 	Agent *AgentClient
+	// AgentCall is the client for interacting with the AgentCall builders.
+	AgentCall *AgentCallClient
 	// ContextEntry is the client for interacting with the ContextEntry builders.
 	ContextEntry *ContextEntryClient
 	// Department is the client for interacting with the Department builders.
@@ -61,6 +65,8 @@ type Client struct {
 	Role *RoleClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TaskTemplate is the client for interacting with the TaskTemplate builders.
+	TaskTemplate *TaskTemplateClient
 	// Team is the client for interacting with the Team builders.
 	Team *TeamClient
 	// User is the client for interacting with the User builders.
@@ -80,6 +86,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.APIToken = NewAPITokenClient(c.config)
 	c.Agent = NewAgentClient(c.config)
+	c.AgentCall = NewAgentCallClient(c.config)
 	c.ContextEntry = NewContextEntryClient(c.config)
 	c.Department = NewDepartmentClient(c.config)
 	c.Document = NewDocumentClient(c.config)
@@ -90,6 +97,7 @@ func (c *Client) init() {
 	c.Permission = NewPermissionClient(c.config)
 	c.Role = NewRoleClient(c.config)
 	c.Task = NewTaskClient(c.config)
+	c.TaskTemplate = NewTaskTemplateClient(c.config)
 	c.Team = NewTeamClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.Wave = NewWaveClient(c.config)
@@ -187,6 +195,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:         cfg,
 		APIToken:       NewAPITokenClient(cfg),
 		Agent:          NewAgentClient(cfg),
+		AgentCall:      NewAgentCallClient(cfg),
 		ContextEntry:   NewContextEntryClient(cfg),
 		Department:     NewDepartmentClient(cfg),
 		Document:       NewDocumentClient(cfg),
@@ -197,6 +206,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Permission:     NewPermissionClient(cfg),
 		Role:           NewRoleClient(cfg),
 		Task:           NewTaskClient(cfg),
+		TaskTemplate:   NewTaskTemplateClient(cfg),
 		Team:           NewTeamClient(cfg),
 		User:           NewUserClient(cfg),
 		Wave:           NewWaveClient(cfg),
@@ -221,6 +231,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:         cfg,
 		APIToken:       NewAPITokenClient(cfg),
 		Agent:          NewAgentClient(cfg),
+		AgentCall:      NewAgentCallClient(cfg),
 		ContextEntry:   NewContextEntryClient(cfg),
 		Department:     NewDepartmentClient(cfg),
 		Document:       NewDocumentClient(cfg),
@@ -231,6 +242,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Permission:     NewPermissionClient(cfg),
 		Role:           NewRoleClient(cfg),
 		Task:           NewTaskClient(cfg),
+		TaskTemplate:   NewTaskTemplateClient(cfg),
 		Team:           NewTeamClient(cfg),
 		User:           NewUserClient(cfg),
 		Wave:           NewWaveClient(cfg),
@@ -263,9 +275,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIToken, c.Agent, c.ContextEntry, c.Department, c.Document, c.Event,
-		c.KnowledgeSpace, c.Message, c.Organization, c.Permission, c.Role, c.Task,
-		c.Team, c.User, c.Wave,
+		c.APIToken, c.Agent, c.AgentCall, c.ContextEntry, c.Department, c.Document,
+		c.Event, c.KnowledgeSpace, c.Message, c.Organization, c.Permission, c.Role,
+		c.Task, c.TaskTemplate, c.Team, c.User, c.Wave,
 	} {
 		n.Use(hooks...)
 	}
@@ -275,9 +287,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIToken, c.Agent, c.ContextEntry, c.Department, c.Document, c.Event,
-		c.KnowledgeSpace, c.Message, c.Organization, c.Permission, c.Role, c.Task,
-		c.Team, c.User, c.Wave,
+		c.APIToken, c.Agent, c.AgentCall, c.ContextEntry, c.Department, c.Document,
+		c.Event, c.KnowledgeSpace, c.Message, c.Organization, c.Permission, c.Role,
+		c.Task, c.TaskTemplate, c.Team, c.User, c.Wave,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -290,6 +302,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.APIToken.mutate(ctx, m)
 	case *AgentMutation:
 		return c.Agent.mutate(ctx, m)
+	case *AgentCallMutation:
+		return c.AgentCall.mutate(ctx, m)
 	case *ContextEntryMutation:
 		return c.ContextEntry.mutate(ctx, m)
 	case *DepartmentMutation:
@@ -310,6 +324,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Role.mutate(ctx, m)
 	case *TaskMutation:
 		return c.Task.mutate(ctx, m)
+	case *TaskTemplateMutation:
+		return c.TaskTemplate.mutate(ctx, m)
 	case *TeamMutation:
 		return c.Team.mutate(ctx, m)
 	case *UserMutation:
@@ -584,6 +600,139 @@ func (c *AgentClient) mutate(ctx context.Context, m *AgentMutation) (Value, erro
 		return (&AgentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Agent mutation op: %q", m.Op())
+	}
+}
+
+// AgentCallClient is a client for the AgentCall schema.
+type AgentCallClient struct {
+	config
+}
+
+// NewAgentCallClient returns a client for the AgentCall from the given config.
+func NewAgentCallClient(c config) *AgentCallClient {
+	return &AgentCallClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `agentcall.Hooks(f(g(h())))`.
+func (c *AgentCallClient) Use(hooks ...Hook) {
+	c.hooks.AgentCall = append(c.hooks.AgentCall, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `agentcall.Intercept(f(g(h())))`.
+func (c *AgentCallClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AgentCall = append(c.inters.AgentCall, interceptors...)
+}
+
+// Create returns a builder for creating a AgentCall entity.
+func (c *AgentCallClient) Create() *AgentCallCreate {
+	mutation := newAgentCallMutation(c.config, OpCreate)
+	return &AgentCallCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AgentCall entities.
+func (c *AgentCallClient) CreateBulk(builders ...*AgentCallCreate) *AgentCallCreateBulk {
+	return &AgentCallCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AgentCallClient) MapCreateBulk(slice any, setFunc func(*AgentCallCreate, int)) *AgentCallCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AgentCallCreateBulk{err: fmt.Errorf("calling to AgentCallClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AgentCallCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AgentCallCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AgentCall.
+func (c *AgentCallClient) Update() *AgentCallUpdate {
+	mutation := newAgentCallMutation(c.config, OpUpdate)
+	return &AgentCallUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AgentCallClient) UpdateOne(_m *AgentCall) *AgentCallUpdateOne {
+	mutation := newAgentCallMutation(c.config, OpUpdateOne, withAgentCall(_m))
+	return &AgentCallUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AgentCallClient) UpdateOneID(id string) *AgentCallUpdateOne {
+	mutation := newAgentCallMutation(c.config, OpUpdateOne, withAgentCallID(id))
+	return &AgentCallUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AgentCall.
+func (c *AgentCallClient) Delete() *AgentCallDelete {
+	mutation := newAgentCallMutation(c.config, OpDelete)
+	return &AgentCallDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AgentCallClient) DeleteOne(_m *AgentCall) *AgentCallDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AgentCallClient) DeleteOneID(id string) *AgentCallDeleteOne {
+	builder := c.Delete().Where(agentcall.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AgentCallDeleteOne{builder}
+}
+
+// Query returns a query builder for AgentCall.
+func (c *AgentCallClient) Query() *AgentCallQuery {
+	return &AgentCallQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAgentCall},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AgentCall entity by its id.
+func (c *AgentCallClient) Get(ctx context.Context, id string) (*AgentCall, error) {
+	return c.Query().Where(agentcall.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AgentCallClient) GetX(ctx context.Context, id string) *AgentCall {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AgentCallClient) Hooks() []Hook {
+	return c.hooks.AgentCall
+}
+
+// Interceptors returns the client interceptors.
+func (c *AgentCallClient) Interceptors() []Interceptor {
+	return c.inters.AgentCall
+}
+
+func (c *AgentCallClient) mutate(ctx context.Context, m *AgentCallMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AgentCallCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AgentCallUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AgentCallUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AgentCallDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AgentCall mutation op: %q", m.Op())
 	}
 }
 
@@ -1965,6 +2114,139 @@ func (c *TaskClient) mutate(ctx context.Context, m *TaskMutation) (Value, error)
 	}
 }
 
+// TaskTemplateClient is a client for the TaskTemplate schema.
+type TaskTemplateClient struct {
+	config
+}
+
+// NewTaskTemplateClient returns a client for the TaskTemplate from the given config.
+func NewTaskTemplateClient(c config) *TaskTemplateClient {
+	return &TaskTemplateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tasktemplate.Hooks(f(g(h())))`.
+func (c *TaskTemplateClient) Use(hooks ...Hook) {
+	c.hooks.TaskTemplate = append(c.hooks.TaskTemplate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tasktemplate.Intercept(f(g(h())))`.
+func (c *TaskTemplateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TaskTemplate = append(c.inters.TaskTemplate, interceptors...)
+}
+
+// Create returns a builder for creating a TaskTemplate entity.
+func (c *TaskTemplateClient) Create() *TaskTemplateCreate {
+	mutation := newTaskTemplateMutation(c.config, OpCreate)
+	return &TaskTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TaskTemplate entities.
+func (c *TaskTemplateClient) CreateBulk(builders ...*TaskTemplateCreate) *TaskTemplateCreateBulk {
+	return &TaskTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TaskTemplateClient) MapCreateBulk(slice any, setFunc func(*TaskTemplateCreate, int)) *TaskTemplateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TaskTemplateCreateBulk{err: fmt.Errorf("calling to TaskTemplateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TaskTemplateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TaskTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TaskTemplate.
+func (c *TaskTemplateClient) Update() *TaskTemplateUpdate {
+	mutation := newTaskTemplateMutation(c.config, OpUpdate)
+	return &TaskTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TaskTemplateClient) UpdateOne(_m *TaskTemplate) *TaskTemplateUpdateOne {
+	mutation := newTaskTemplateMutation(c.config, OpUpdateOne, withTaskTemplate(_m))
+	return &TaskTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TaskTemplateClient) UpdateOneID(id string) *TaskTemplateUpdateOne {
+	mutation := newTaskTemplateMutation(c.config, OpUpdateOne, withTaskTemplateID(id))
+	return &TaskTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TaskTemplate.
+func (c *TaskTemplateClient) Delete() *TaskTemplateDelete {
+	mutation := newTaskTemplateMutation(c.config, OpDelete)
+	return &TaskTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TaskTemplateClient) DeleteOne(_m *TaskTemplate) *TaskTemplateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TaskTemplateClient) DeleteOneID(id string) *TaskTemplateDeleteOne {
+	builder := c.Delete().Where(tasktemplate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TaskTemplateDeleteOne{builder}
+}
+
+// Query returns a query builder for TaskTemplate.
+func (c *TaskTemplateClient) Query() *TaskTemplateQuery {
+	return &TaskTemplateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTaskTemplate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TaskTemplate entity by its id.
+func (c *TaskTemplateClient) Get(ctx context.Context, id string) (*TaskTemplate, error) {
+	return c.Query().Where(tasktemplate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TaskTemplateClient) GetX(ctx context.Context, id string) *TaskTemplate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TaskTemplateClient) Hooks() []Hook {
+	return c.hooks.TaskTemplate
+}
+
+// Interceptors returns the client interceptors.
+func (c *TaskTemplateClient) Interceptors() []Interceptor {
+	return c.inters.TaskTemplate
+}
+
+func (c *TaskTemplateClient) mutate(ctx context.Context, m *TaskTemplateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TaskTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TaskTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TaskTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TaskTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TaskTemplate mutation op: %q", m.Op())
+	}
+}
+
 // TeamClient is a client for the Team schema.
 type TeamClient struct {
 	config
@@ -2399,12 +2681,13 @@ func (c *WaveClient) mutate(ctx context.Context, m *WaveMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIToken, Agent, ContextEntry, Department, Document, Event, KnowledgeSpace,
-		Message, Organization, Permission, Role, Task, Team, User, Wave []ent.Hook
+		APIToken, Agent, AgentCall, ContextEntry, Department, Document, Event,
+		KnowledgeSpace, Message, Organization, Permission, Role, Task, TaskTemplate,
+		Team, User, Wave []ent.Hook
 	}
 	inters struct {
-		APIToken, Agent, ContextEntry, Department, Document, Event, KnowledgeSpace,
-		Message, Organization, Permission, Role, Task, Team, User,
-		Wave []ent.Interceptor
+		APIToken, Agent, AgentCall, ContextEntry, Department, Document, Event,
+		KnowledgeSpace, Message, Organization, Permission, Role, Task, TaskTemplate,
+		Team, User, Wave []ent.Interceptor
 	}
 )

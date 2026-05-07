@@ -12,6 +12,9 @@ type APIToken func(*sql.Selector)
 // Agent is the predicate function for agent builders.
 type Agent func(*sql.Selector)
 
+// AgentCall is the predicate function for agentcall builders.
+type AgentCall func(*sql.Selector)
+
 // ContextEntry is the predicate function for contextentry builders.
 type ContextEntry func(*sql.Selector)
 
@@ -41,6 +44,9 @@ type Role func(*sql.Selector)
 
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
+
+// TaskTemplate is the predicate function for tasktemplate builders.
+type TaskTemplate func(*sql.Selector)
 
 // Team is the predicate function for team builders.
 type Team func(*sql.Selector)

@@ -10,8 +10,8 @@ import (
 )
 
 func main() {
-	if err := entc.Generate("./ent/schema", &gen.Config{
-		Target: "./ent",
+	if err := entc.Generate("./schema", &gen.Config{
+		Target: ".",
 	}); err != nil {
 		log.Fatalf("running entc generate: %v", err)
 	}

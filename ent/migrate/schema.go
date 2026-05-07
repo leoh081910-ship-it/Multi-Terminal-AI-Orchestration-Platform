@@ -70,6 +70,8 @@ var (
 		{Name: "status", Type: field.TypeString, Size: 2147483647, Default: "idle"},
 		{Name: "specialties", Type: field.TypeString, Size: 2147483647, Default: "[]"},
 		{Name: "config", Type: field.TypeString, Size: 2147483647, Default: "{}"},
+		{Name: "runner_type", Type: field.TypeString, Size: 2147483647, Default: "cli"},
+		{Name: "runner_config", Type: field.TypeString, Size: 2147483647, Default: "{}"},
 		{Name: "last_heartbeat_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 	}
@@ -93,6 +95,76 @@ var (
 				Name:    "agent_status",
 				Unique:  false,
 				Columns: []*schema.Column{AgentsColumns[5]},
+			},
+			{
+				Name:    "agent_type",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[3]},
+			},
+			{
+				Name:    "agent_name",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[2]},
+			},
+			{
+				Name:    "agent_runner_type",
+				Unique:  false,
+				Columns: []*schema.Column{AgentsColumns[8]},
+			},
+			{
+				Name:    "agent_org_id_name",
+				Unique:  true,
+				Columns: []*schema.Column{AgentsColumns[1], AgentsColumns[2]},
+			},
+		},
+	}
+	// AgentCallsColumns holds the columns for the "agent_calls" table.
+	AgentCallsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 2147483647},
+		{Name: "task_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "agent_id", Type: field.TypeString, Size: 2147483647},
+		{Name: "runner_type", Type: field.TypeString, Size: 2147483647},
+		{Name: "task_type", Type: field.TypeString, Size: 2147483647},
+		{Name: "trace_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "status", Type: field.TypeString, Size: 2147483647},
+		{Name: "exit_code", Type: field.TypeInt, Default: 0},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "output_summary", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "duration_ms", Type: field.TypeInt64, Default: 0},
+		{Name: "started_at", Type: field.TypeTime},
+		{Name: "finished_at", Type: field.TypeTime},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// AgentCallsTable holds the schema information for the "agent_calls" table.
+	AgentCallsTable = &schema.Table{
+		Name:       "agent_calls",
+		Columns:    AgentCallsColumns,
+		PrimaryKey: []*schema.Column{AgentCallsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "agentcall_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCallsColumns[1]},
+			},
+			{
+				Name:    "agentcall_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCallsColumns[2]},
+			},
+			{
+				Name:    "agentcall_trace_id",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCallsColumns[5]},
+			},
+			{
+				Name:    "agentcall_status",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCallsColumns[6]},
+			},
+			{
+				Name:    "agentcall_started_at",
+				Unique:  false,
+				Columns: []*schema.Column{AgentCallsColumns[11]},
 			},
 		},
 	}
@@ -142,6 +214,11 @@ var (
 				Name:    "department_org_id",
 				Unique:  false,
 				Columns: []*schema.Column{DepartmentsColumns[1]},
+			},
+			{
+				Name:    "department_lead_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[4]},
 			},
 		},
 	}
@@ -222,6 +299,21 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{EventsColumns[2], EventsColumns[7]},
 			},
+			{
+				Name:    "event_event_type",
+				Unique:  false,
+				Columns: []*schema.Column{EventsColumns[4]},
+			},
+			{
+				Name:    "event_task_id_timestamp",
+				Unique:  false,
+				Columns: []*schema.Column{EventsColumns[3], EventsColumns[7]},
+			},
+			{
+				Name:    "event_runner_id",
+				Unique:  false,
+				Columns: []*schema.Column{EventsColumns[11]},
+			},
 		},
 	}
 	// KnowledgeSpacesColumns holds the columns for the "knowledge_spaces" table.
@@ -283,6 +375,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{MessagesColumns[2]},
 			},
+			{
+				Name:    "message_space_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{MessagesColumns[1], MessagesColumns[7]},
+			},
 		},
 	}
 	// OrganizationsColumns holds the columns for the "organizations" table.
@@ -297,6 +394,13 @@ var (
 		Name:       "organizations",
 		Columns:    OrganizationsColumns,
 		PrimaryKey: []*schema.Column{OrganizationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "organization_name",
+				Unique:  false,
+				Columns: []*schema.Column{OrganizationsColumns[1]},
+			},
+		},
 	}
 	// PermissionsColumns holds the columns for the "permissions" table.
 	PermissionsColumns = []*schema.Column{
@@ -436,6 +540,58 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{TasksColumns[21]},
 			},
+			{
+				Name:    "task_assigned_role_id",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[22]},
+			},
+			{
+				Name:    "task_project_id_dispatch_ref",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[2]},
+			},
+			{
+				Name:    "task_decomposition_status",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[19]},
+			},
+		},
+	}
+	// TaskTemplatesColumns holds the columns for the "task_templates" table.
+	TaskTemplatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, Size: 36},
+		{Name: "name", Type: field.TypeString, Size: 255},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "project_id", Type: field.TypeString, Nullable: true, Size: 36},
+		{Name: "owner_agent", Type: field.TypeString, Size: 100, Default: "Claude"},
+		{Name: "task_type", Type: field.TypeString, Size: 100, Default: "task"},
+		{Name: "priority", Type: field.TypeInt, Default: 3},
+		{Name: "command", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "work_dir", Type: field.TypeString, Nullable: true, Size: 500},
+		{Name: "timeout_sec", Type: field.TypeInt, Default: 1800},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "inputs", Type: field.TypeJSON, Nullable: true},
+		{Name: "outputs", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_by", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// TaskTemplatesTable holds the schema information for the "task_templates" table.
+	TaskTemplatesTable = &schema.Table{
+		Name:       "task_templates",
+		Columns:    TaskTemplatesColumns,
+		PrimaryKey: []*schema.Column{TaskTemplatesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tasktemplate_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{TaskTemplatesColumns[3]},
+			},
+			{
+				Name:    "tasktemplate_name",
+				Unique:  false,
+				Columns: []*schema.Column{TaskTemplatesColumns[1]},
+			},
 		},
 	}
 	// TeamsColumns holds the columns for the "teams" table.
@@ -463,6 +619,11 @@ var (
 				Name:    "team_dept_id",
 				Unique:  false,
 				Columns: []*schema.Column{TeamsColumns[2]},
+			},
+			{
+				Name:    "team_lead_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{TeamsColumns[5]},
 			},
 		},
 	}
@@ -582,6 +743,7 @@ var (
 	Tables = []*schema.Table{
 		APITokensTable,
 		AgentsTable,
+		AgentCallsTable,
 		ContextEntriesTable,
 		DepartmentsTable,
 		DocumentsTable,
@@ -592,6 +754,7 @@ var (
 		PermissionsTable,
 		RolesTable,
 		TasksTable,
+		TaskTemplatesTable,
 		TeamsTable,
 		UsersTable,
 		WavesTable,

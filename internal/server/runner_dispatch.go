@@ -10,10 +10,13 @@ package server
 
 import (
 	"context"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/runner"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/transport"
 )
 
@@ -140,6 +143,9 @@ func (s *Server) RunCompatExecutionViaRunner(
 ) (*transport.ExecutionResult, error) {
 
 	agentID := readString(payload, "owner_agent")
+	traceID := readString(payload, "execution_session_id")
+	taskType := readString(payload, "type")
+	startTime := time.Now()
 
 	run := s.getRunnerForAgent(agentID)
 	if run == nil {
@@ -171,6 +177,7 @@ func (s *Server) RunCompatExecutionViaRunner(
 	}
 
 	if run == nil {
+		s.logger.Warn().Str("task_id", taskID).Str("trace_id", traceID).Msg("no Runner available for execution")
 		return nil, &runnerError{msg: "no Runner available for execution"}
 	}
 
@@ -191,9 +198,114 @@ func (s *Server) RunCompatExecutionViaRunner(
 	// Execute
 	result, execErr := run.Execute(ctx, runnerTask)
 
+	// Record metrics
+	execDuration := time.Since(startTime).Seconds()
+	runnerType := string(run.Type())
+	status := "success"
+	if execErr != nil || result == nil || !result.Success {
+		status = "failure"
+	}
+	telemetry.AgentRequestsTotal.WithLabelValues(agentID, runnerType, taskType, status).Inc()
+	telemetry.AgentDurationSeconds.WithLabelValues(agentID, runnerType).Observe(execDuration)
+
 	// Translate to compat result
 	compatResult, _ := runnerResultToExecutionResult(result, execErr)
+
+	// Record agent call for observability
+	s.recordAgentCallAsync(context.Background(), &store.AgentCallRecord{
+		ID:            uuid.NewString(),
+		TaskID:        taskID,
+		AgentID:       agentID,
+		RunnerType:    runnerType,
+		TaskType:      taskType,
+		TraceID:       traceID,
+		Status:        status,
+		ExitCode:      compatExitCode(result, execErr),
+		ErrorMessage:  compatErrorMessage(result, execErr),
+		OutputSummary: compatOutputSummary(result),
+		DurationMs:    time.Since(startTime).Milliseconds(),
+		StartedAt:     startTime,
+		FinishedAt:    time.Now(),
+	})
+
 	return compatResult, execErr
+}
+
+// recordAgentCallAsync records an agent call without blocking the caller.
+// Recording failures are logged but never propagate to the execution path.
+func (s *Server) recordAgentCallAsync(ctx context.Context, rec *store.AgentCallRecord) {
+	go func() {
+		if err := s.repo.RecordAgentCall(ctx, rec); err != nil {
+			s.logger.Warn().Err(err).
+				Str("task_id", rec.TaskID).
+				Str("agent_id", rec.AgentID).
+				Str("trace_id", rec.TraceID).
+				Msg("failed to record agent call")
+		}
+	}()
+}
+
+func compatExitCode(result *runner.RunnerResult, err error) int {
+	if err != nil {
+		return -1
+	}
+	if result == nil {
+		return -1
+	}
+	return result.ExitCode
+}
+
+func compatErrorMessage(result *runner.RunnerResult, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if result != nil && result.Error != "" {
+		return result.Error
+	}
+	return ""
+}
+
+func compatOutputSummary(result *runner.RunnerResult) string {
+	if result == nil || result.Output == "" {
+		return ""
+	}
+	const maxSummary = 500
+	if len(result.Output) > maxSummary {
+		return result.Output[:maxSummary]
+	}
+	return result.Output
+}
+
+// compatDispatch helpers — extract fields from transport.ExecutionResult for agent_call recording.
+func compatDispatchExitCode(result *transport.ExecutionResult, err error) int {
+	if err != nil {
+		return -1
+	}
+	if result == nil {
+		return -1
+	}
+	return result.ExitCode
+}
+
+func compatDispatchErrorMessage(result *transport.ExecutionResult, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if result != nil && result.Error != "" {
+		return result.Error
+	}
+	return ""
+}
+
+func compatOutputSummaryFromTransport(result *transport.ExecutionResult) string {
+	if result == nil || result.Output == "" {
+		return ""
+	}
+	const maxSummary = 500
+	if len(result.Output) > maxSummary {
+		return result.Output[:maxSummary]
+	}
+	return result.Output
 }
 
 // runnerError is a simple error type for runner dispatch errors.

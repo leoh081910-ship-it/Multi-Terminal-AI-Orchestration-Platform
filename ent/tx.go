@@ -16,6 +16,8 @@ type Tx struct {
 	APIToken *APITokenClient
 	// Agent is the client for interacting with the Agent builders.
 	Agent *AgentClient
+	// AgentCall is the client for interacting with the AgentCall builders.
+	AgentCall *AgentCallClient
 	// ContextEntry is the client for interacting with the ContextEntry builders.
 	ContextEntry *ContextEntryClient
 	// Department is the client for interacting with the Department builders.
@@ -36,6 +38,8 @@ type Tx struct {
 	Role *RoleClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TaskTemplate is the client for interacting with the TaskTemplate builders.
+	TaskTemplate *TaskTemplateClient
 	// Team is the client for interacting with the Team builders.
 	Team *TeamClient
 	// User is the client for interacting with the User builders.
@@ -175,6 +179,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.APIToken = NewAPITokenClient(tx.config)
 	tx.Agent = NewAgentClient(tx.config)
+	tx.AgentCall = NewAgentCallClient(tx.config)
 	tx.ContextEntry = NewContextEntryClient(tx.config)
 	tx.Department = NewDepartmentClient(tx.config)
 	tx.Document = NewDocumentClient(tx.config)
@@ -185,6 +190,7 @@ func (tx *Tx) init() {
 	tx.Permission = NewPermissionClient(tx.config)
 	tx.Role = NewRoleClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
+	tx.TaskTemplate = NewTaskTemplateClient(tx.config)
 	tx.Team = NewTeamClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.Wave = NewWaveClient(tx.config)

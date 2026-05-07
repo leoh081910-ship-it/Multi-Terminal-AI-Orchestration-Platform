@@ -33,6 +33,18 @@ func (f AgentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AgentMutation", m)
 }
 
+// The AgentCallFunc type is an adapter to allow the use of ordinary
+// function as AgentCall mutator.
+type AgentCallFunc func(context.Context, *ent.AgentCallMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AgentCallFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AgentCallMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AgentCallMutation", m)
+}
+
 // The ContextEntryFunc type is an adapter to allow the use of ordinary
 // function as ContextEntry mutator.
 type ContextEntryFunc func(context.Context, *ent.ContextEntryMutation) (ent.Value, error)
@@ -151,6 +163,18 @@ func (f TaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskMutation", m)
+}
+
+// The TaskTemplateFunc type is an adapter to allow the use of ordinary
+// function as TaskTemplate mutator.
+type TaskTemplateFunc func(context.Context, *ent.TaskTemplateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TaskTemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TaskTemplateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskTemplateMutation", m)
 }
 
 // The TeamFunc type is an adapter to allow the use of ordinary

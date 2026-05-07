@@ -197,6 +197,7 @@ func (s *Server) setupRoutes() {
 				r.Put("/", s.handleUpdateTask)
 				r.Post("/cancel", s.handleCancelTask)
 				r.Post("/retry", s.handleRetryTask)
+				r.Get("/agent-calls", s.handleGetTaskAgentCalls)
 			})
 		})
 
@@ -538,6 +539,26 @@ func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
 			"id":     id,
 			"status": engine.StateRetryWaiting,
 		},
+	})
+}
+
+func (s *Server) handleGetTaskAgentCalls(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	calls, err := s.repo.ListAgentCallsByTask(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to list agent calls")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to list agent calls",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    calls,
 	})
 }
 

@@ -57,4 +57,17 @@ var (
 		Name:      "websocket_connections",
 		Help:      "Number of active WebSocket connections",
 	})
+
+	AgentRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: Namespace,
+		Name:      "agent_requests_total",
+		Help:      "Total number of agent execution requests",
+	}, []string{"agent_id", "runner_type", "task_type", "status"})
+
+	AgentDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: Namespace,
+		Name:      "agent_duration_seconds",
+		Help:      "Agent execution duration in seconds",
+		Buckets:   []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600},
+	}, []string{"agent_id", "runner_type"})
 )
