@@ -256,3 +256,20 @@ export interface WorkerStatus {
 export interface SystemWorkersResponse {
   workers: WorkerStatus[];
 }
+
+export interface AgentCallRecord {
+  id: string;
+  task_id: string;
+  agent_id: string;
+  runner_type: string;
+  task_type: string;
+  trace_id: string;
+  status: string;
+  exit_code: number;
+  error_message: string;
+  output_summary: string;
+  duration_ms: number;
+  started_at: string;
+  finished_at: string;
+  created_at: string;
+}

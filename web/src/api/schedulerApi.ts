@@ -1,6 +1,7 @@
 ﻿import client from './client';
 import { Agent, DispatchStatus } from '../types/scheduler';
 import type {
+  AgentCallRecord,
   AgentConfig,
   BulkImportResult,
   BulkImportTaskDraft,
@@ -295,5 +296,12 @@ export const schedulerApi = {
   getSystemWorkers: async (): Promise<SystemWorkersResponse> => {
     const response = await client.get<{ success: boolean; data: SystemWorkersResponse }>('/system/workers');
     return response.data.data;
+  },
+
+  // Agent call history (observability)
+
+  getAgentCalls: async (taskId: string): Promise<AgentCallRecord[]> => {
+    const response = await client.get<{ success: boolean; data: AgentCallRecord[] }>(`/tasks/${taskId}/agent-calls`);
+    return response.data.data || [];
   },
 };

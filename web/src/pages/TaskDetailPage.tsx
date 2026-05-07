@@ -5,8 +5,8 @@ import { schedulerApi } from '../api/schedulerApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import LogViewer from '../components/LogViewer';
 import { useProject } from '../hooks/useProject';
-import type { ScheduledTask, TaskExecution, TaskLineage, WSMessage } from '../types/scheduler';
-import { TaskStatus, DispatchStatus, Agent } from '../types/scheduler';
+import type { AgentCallRecord, ScheduledTask, TaskLineage } from '../types/scheduler';
+import '../types/scheduler';
 
 const STATUS_COLORS: Record<string, string> = {
   backlog: '#6b7280',
@@ -34,9 +34,9 @@ export default function TaskDetailPage() {
   const { projectId } = useProject();
   const { lastMessage } = useWebSocket(projectId);
 
-  const [activeTab, setActiveTab] = useState<'details' | 'execution' | 'lineage' | 'logs'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'lineage' | 'logs' | 'agent-calls'>('details');
 
-  const { data: task, isLoading, error } = useQuery({
+  const { isLoading, error } = useQuery({
     queryKey: ['task', projectId, taskId],
     queryFn: () => schedulerApi.getTaskExecution(projectId, taskId!).then(() =>
       fetchTask()
@@ -66,7 +66,7 @@ export default function TaskDetailPage() {
     }
   }, [lastMessage, taskId, projectId, qc]);
 
-  const { data: execution } = useQuery({
+  const { data: _execution } = useQuery({
     queryKey: ['execution', projectId, taskId],
     queryFn: () => schedulerApi.getTaskExecution(projectId, taskId!),
     enabled: !!taskId && !!projectId,
@@ -76,6 +76,12 @@ export default function TaskDetailPage() {
     queryKey: ['lineage', projectId, taskId],
     queryFn: () => schedulerApi.getTaskLineage(projectId, taskId!),
     enabled: !!taskId && !!projectId && activeTab === 'lineage',
+  });
+
+  const { data: agentCalls } = useQuery({
+    queryKey: ['agent-calls', taskId],
+    queryFn: () => schedulerApi.getAgentCalls(taskId!),
+    enabled: !!taskId && activeTab === 'agent-calls',
   });
 
   const retryMutation = useMutation({
@@ -179,7 +185,7 @@ export default function TaskDetailPage() {
       {/* Tabs */}
       <div className="border-b border-gray-700">
         <div className="flex gap-6">
-          {(['details', 'execution', 'lineage', 'logs'] as const).map(tab => (
+          {(['details', 'lineage', 'logs', 'agent-calls'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -189,7 +195,7 @@ export default function TaskDetailPage() {
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              {tab}
+              {tab === 'agent-calls' ? 'Agent Calls' : tab}
             </button>
           ))}
         </div>
@@ -201,6 +207,7 @@ export default function TaskDetailPage() {
         <LogViewer projectId={projectId} taskId={taskId} maxLines={500} height="500px" />
       )}
       {activeTab === 'lineage' && <LineageTab lineage={lineage} />}
+      {activeTab === 'agent-calls' && <AgentCallsTab calls={agentCalls} />}
     </div>
   );
 }
@@ -270,51 +277,7 @@ function DetailsTab({ task }: { task: ScheduledTask }) {
   );
 }
 
-function ExecutionTab({ execution }: { execution?: TaskExecution }) {
-  if (!execution) return <p className="text-gray-500 text-sm">No execution data available.</p>;
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <InfoField label="Execution ID" value={execution.execution_id} />
-        <InfoField label="Runtime" value={execution.runtime} />
-        <InfoField label="Session ID" value={execution.session_id} />
-        <InfoField label="Status" value={execution.status} />
-        <InfoField label="Started" value={new Date(execution.started_at).toLocaleString()} />
-        {execution.completed_at && <InfoField label="Completed" value={new Date(execution.completed_at).toLocaleString()} />}
-      </div>
-
-      {execution.command && (
-        <div className="bg-gray-800 rounded-lg p-3">
-          <span className="text-xs text-gray-500">Command</span>
-          <pre className="text-sm text-green-300 mt-1 overflow-x-auto">{execution.command}</pre>
-        </div>
-      )}
-
-      {execution.output_tail && (
-        <div className="bg-gray-900 rounded-lg p-3">
-          <span className="text-xs text-gray-500">Output (tail)</span>
-          <pre className="text-xs text-gray-300 mt-1 overflow-x-auto max-h-64 whitespace-pre-wrap">{execution.output_tail}</pre>
-        </div>
-      )}
-
-      {execution.events && execution.events.length > 0 && (
-        <div className="bg-gray-800 rounded-lg p-3">
-          <span className="text-xs text-gray-500 mb-2 block">Events</span>
-          <div className="space-y-2">
-            {execution.events.map((ev, i) => (
-              <div key={i} className="flex items-center gap-3 text-xs">
-                <span className="text-gray-600 w-36 shrink-0">{new Date(ev.timestamp).toLocaleTimeString()}</span>
-                <span className="px-1.5 py-0.5 rounded bg-gray-700 text-gray-300">{ev.event}</span>
-                <span className="text-gray-400 truncate">{ev.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// ExecutionTab intentionally removed (unused)
 
 function LineageTab({ lineage }: { lineage?: TaskLineage }) {
   if (!lineage) return <p className="text-gray-500 text-sm">Loading lineage...</p>;
@@ -362,11 +325,54 @@ function LineageSection({ title, tasks }: { title: string; tasks: ScheduledTask[
   );
 }
 
-function InfoField({ label, value }: { label: string; value: string }) {
+function AgentCallsTab({ calls }: { calls?: AgentCallRecord[] }) {
+  if (!calls) return <p className="text-gray-500 text-sm">Loading agent calls...</p>;
+  if (calls.length === 0) return <p className="text-gray-500 text-sm">No agent call history for this task.</p>;
+
+  const statusBadge = (status: string) => {
+    const bg = status === 'success' ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300';
+    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${bg}`}>{status}</span>;
+  };
+
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
   return (
-    <div className="bg-gray-800 rounded-lg p-3">
-      <span className="text-xs text-gray-500">{label}</span>
-      <p className="text-sm text-gray-200 mt-1 break-all">{value}</p>
+    <div className="space-y-2">
+      {calls.map(call => (
+        <div key={call.id} className="bg-gray-800 rounded-lg p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {statusBadge(call.status)}
+              <span className="text-sm font-medium text-gray-200" style={{ color: AGENT_COLORS[call.agent_id] || '#9ca3af' }}>
+                {call.agent_id}
+              </span>
+              <span className="text-xs text-gray-500">{call.runner_type}</span>
+              <span className="text-xs text-gray-500">{call.task_type}</span>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span>{formatDuration(call.duration_ms)}</span>
+              <span>exit: {call.exit_code}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            <span>{new Date(call.started_at).toLocaleString()}</span>
+            <span>→</span>
+            <span>{new Date(call.finished_at).toLocaleString()}</span>
+            {call.trace_id && <span className="text-gray-600">trace: {call.trace_id.slice(0, 8)}...</span>}
+          </div>
+          {call.output_summary && (
+            <p className="text-sm text-gray-400 whitespace-pre-wrap line-clamp-3">{call.output_summary}</p>
+          )}
+          {call.error_message && (
+            <p className="text-sm text-red-300 whitespace-pre-wrap font-mono line-clamp-3">{call.error_message}</p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
+
+
