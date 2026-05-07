@@ -148,5 +148,55 @@
 
 ---
 
+---
+
+## v3: 通用多 AI Agent 编排平台 (2026-05-06)
+
+### Overview
+
+升级平台从硬编码 3 个 AI 平台（Claude/Codex/Gemini）为支持任意 Agent 的通用编排系统。
+
+**核心变更**:
+- 新增 `Runner` 接口定义执行契约
+- 新增 `AgentRegistry` 支持动态注册/注销
+- 新增 `HTTPRunner` 支持 HTTP API 型 Agent
+- 新增 `MCPRunner` 支持 MCP 协议 Agent
+- Agent 能力自述 + 智能路由增强
+
+**文档**:
+- [Roadmap](v3-multi-agent-roadmap.md)
+- [Implementation Plan](v3-implementation-plan.md)
+- [PR Template](v3-pr-template.md)
+
+### Phases
+
+| Phase | 内容 | 周期 | 状态 |
+|-------|------|------|------|
+| v3-P1 | Runner 接口 + CLIRunner 适配 | Week 1-2 | 📋 规划中 |
+| v3-P2 | Agent Registry + 动态注册 | Week 3-4 | 📋 规划中 |
+| v3-P3 | HTTPRunner + MCPRunner | Week 5-6 | 📋 规划中 |
+| v3-P4 | 能力自述 + 智能路由增强 | Week 7-8 | 📋 规划中 |
+| v3-P5 | 可观测性 (Prometheus + 追踪) | Week 9 | 📋 规划中 |
+| v3-P6 | 文档 + 示例 | Week 10 | 📋 规划中 |
+
+### Requirements (新增)
+
+| ID | 描述 | Phase |
+|----|-------|-------|
+| RN-01 | Runner 接口定义 | P1 |
+| RN-02 | CLIRunner 实现（封装 transport） | P1 |
+| RN-03 | CapabilityManifest 能力自述模型 | P1 |
+| REG-01 | AgentRegistry 动态注册中心 | P2 |
+| REG-02 | 心跳机制 + 状态管理 | P2 |
+| REG-03 | HTTP API 动态注册/注销 | P2 |
+| HTTP-01 | HTTPRunner HTTP API 调用 | P3 |
+| MCP-01 | MCPRunner MCP 协议支持 | P3 |
+| ROUT-01 | 基于 Manifest 的能力匹配路由 | P4 |
+| ROUT-02 | 能力缓存与刷新 | P4 |
+| OBS-01 | Runner 执行链路追踪 | P5 |
+| OBS-02 | Prometheus Agent 指标 | P5 |
+
+---
+
 *Generated: 2026-04-06*
-*Last updated: 2026-04-12 after roadmap sync — all 5 phases confirmed complete from codebase*
+*Last updated: 2026-05-06 — v3 multi-agent roadmap added*

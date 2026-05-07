@@ -87,4 +87,24 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+
+## v3 Evolution (2026-05-06)
+
+**目标**: 通用多 AI Agent 编排平台
+
+平台从硬编码 3 个 AI 平台（Claude/Codex/Gemini）升级为支持任意 Agent 的通用编排系统。
+
+**核心架构演进**:
+- Runner 接口 → 统一执行契约（CLI/HTTP/MCP）
+- Agent Registry → 动态注册/注销/心跳
+- CapabilityManifest → Agent 能力自述
+- Router 增强 → 基于能力的智能路由
+
+**v3 里程碑**: 见 `.planning/v3-multi-agent-roadmap.md`
+
+**关键约束变化**:
+- ~~Agent: Claude Code CLI 首个实现~~ → Agent: 任意 Agent 皆可接入
+
+---
 *Last updated: 2026-04-06 after initialization*
+*Updated: 2026-05-06 with v3 multi-agent evolution plan*

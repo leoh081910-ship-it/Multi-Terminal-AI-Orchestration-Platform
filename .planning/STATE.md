@@ -1,17 +1,81 @@
 ---
-gsd_state_version: 1.2
-milestone: v2.1
-milestone_name: runtime-reliability
-status: completed
-stopped_at: automated-fix-260503 complete
-last_updated: "2026-05-03T01:46:00+08:00"
-last_activity: 2026-05-03 -- Automated full remediation complete; Go environment fixed, all tests passing, config optimized
+gsd_state_version: 1.6
+milestone: v3.0
+milestone_name: multi-agent-orchestration
+status: in_progress
+stopped_at: v3 Phase 1 complete, Phase 2 complete (all code gen, migration tool, org service update, build verified, migration dry-run passed)
+last_updated: "2026-05-06T02:15:00+08:00"
+last_activity: 2026-05-06 -- Phase 2 full completion: buildRunnerFromAgentView fix, ent.Driver fix, migration tool --dry-run verified
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_phases: 6
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
+  percent: 33
+---
+
+# v3 Phase 1 & Phase 2 Progress (2026-05-06)
+
+## ✅ Completed
+
+**Phase 1: Runner 接口与 CLIRunner**
+
+| Task | Status | File |
+|------|--------|------|
+| 1.1 Runner 接口 + CapabilityManifest | ✅ | `internal/runner/interface.go`, `internal/runner/capability.go` |
+| 1.2 CLIRunner 实现（封装 transport） | ✅ | `internal/runner/cli_runner.go` |
+| 1.3 Agent Registry 核心 | ✅ | `internal/registry/registry.go` |
+| 1.4 心跳机制 | ✅ | `internal/registry/heartbeat.go` |
+| 1.5 Agent Schema 扩展 | ✅ | `ent/schema/agent.go` — runner_type + runner_config 字段 |
+| 1.6 迁移工具 | ✅ | `cmd/migrate/main.go` |
+| 1.7 单元测试 | ✅ | `internal/runner/interface_test.go` |
+
+**main.go 集成**:
+- `SetRunnerRegistry()` 方法注入 Registry 到 Server
+- `LoadFromDB()` 启动时从 DB 加载 Runner
+- compat 项目配置自动注册 CLIRunner
+- `StartHeartbeat()` 启动 Runner 健康检查循环
+
+**向后兼容**:
+- CLITransport 零修改，只做接口适配
+- compat dispatch 路径完全保留，新路径通过 `RunCompatExecutionViaRunner()` 提供
+- 迁移工具写 `agent.config` JSON 字段，兼容旧 schema
+
+## Build Status
+
+```
+go build ./...                        ✅ 全部编译通过
+go test ./internal/runner/...         ✅ 8/8 tests PASS
+go test ./internal/transport/...      ✅ PASS
+```
+
+## Phase 2 进展
+
+**✅ `runCompatExecution` Runner 集成**:
+- 新增 `getRunnerForAgent()` → 从 Registry 查找 Runner
+- 新增 `buildRunnerTask()` → compat payload → `runner.RunnerTask`
+- 新增 `runnerResultToExecutionResult()` → `RunnerResult` → `transport.ExecutionResult`
+- 执行流程：Runner 有 → v3 路径 | Runner 无 → v2 compat 路径（完全向后兼容）
+
+**✅ ent 代码生成**:
+- 修复 `TaskTemplate.now()` → `time.Now`（ent 兼容）
+- `go generate ./ent` 成功生成 `runner_type`/`runner_config` 专用字段
+- `SetRunnerType()` / `SetRunnerConfig()` 方法可用
+
+**✅ 迁移工具更新**:
+- 使用 `SetRunnerType("cli")` 和 `SetRunnerConfig(json)` 专用列
+- 兼容旧 agents（fallback 到 `config` JSON）
+
+**✅ org Service 更新**:
+- `CreateAgentInput` / `UpdateAgentInput` 新增 `RunnerType` / `RunnerConfig` 字段
+- `AgentView` 新增 `runner_type` / `runner_config` 输出
+- `agentToView()` 填充新字段
+
+## Next: Phase 2 剩余
+
+- 运行迁移工具：`go run cmd/migrate/main.go --config config.yaml --db ai-orchestration.db --dry-run`
+- Phase 3: HTTPRunner 实现 + API Agent 注册端点
+
 ---
 
 # Project State
