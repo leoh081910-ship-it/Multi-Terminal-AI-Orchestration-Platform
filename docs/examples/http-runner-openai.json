@@ -1,0 +1,16 @@
+{
+  "_comment": "OpenAI GPT-4o via HTTPRunner — chat completions API",
+  "_usage": "POST /api/v1/orgs/{orgID}/agents with runner_type='http' and this as runner_config",
+  "_env": "Set OPENAI_API_KEY environment variable before starting the server",
+
+  "endpoint": "https://api.openai.com/v1/chat/completions",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "auth_token": "Bearer ${OPENAI_API_KEY}",
+  "body_template": "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a software engineering assistant. Make the required file changes directly. Do not only describe the change.\"},{\"role\":\"user\",\"content\":\"Task: {{.ID}} ({{.Type}})\\nTitle: {{.Context.title}}\\nDescription: {{.Context.description}}\\nFiles to modify:\\n{{range .FilesToModify}}- {{.}}\\n{{end}}\"}]}",
+  "output_path": "choices[0].message.content",
+  "timeout_ms": 300000,
+  "model": "gpt-4o"
+}

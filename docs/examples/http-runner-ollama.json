@@ -1,0 +1,12 @@
+{
+  "_comment": "Ollama local LLM via HTTPRunner — generate API",
+  "_usage": "POST /api/v1/orgs/{orgID}/agents with runner_type='http' and this as runner_config",
+  "_requirement": "Ollama must be running locally: ollama serve && ollama pull llama3",
+
+  "endpoint": "http://localhost:11434/api/generate",
+  "method": "POST",
+  "body_template": "{\"model\":\"llama3\",\"prompt\":\"You are a software engineering assistant. Make the required file changes directly. Do not only describe the change.\\n\\nTask: {{.ID}} ({{.Type}})\\nTitle: {{.Context.title}}\\nDescription: {{.Context.description}}\",\"stream\":false}",
+  "output_path": "response",
+  "timeout_ms": 600000,
+  "model": "llama3"
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Anthropic Claude via HTTPRunner — messages API",
+  "_usage": "POST /api/v1/orgs/{orgID}/agents with runner_type='http' and this as runner_config",
+  "_env": "Set ANTHROPIC_API_KEY environment variable before starting the server",
+
+  "endpoint": "https://api.anthropic.com/v1/messages",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01"
+  },
+  "auth_token": "x-api-key ${ANTHROPIC_API_KEY}",
+  "body_template": "{\"model\":\"claude-sonnet-4-20250514\",\"max_tokens\":8192,\"messages\":[{\"role\":\"user\",\"content\":\"You are a software engineering assistant. Make the required file changes directly. Do not only describe the change.\\n\\nTask: {{.ID}} ({{.Type}})\\nTitle: {{.Context.title}}\\nDescription: {{.Context.description}}\\nFiles to modify:\\n{{range .FilesToModify}}- {{.}}\\n{{end}}\"}]}",
+  "output_path": "content[0].text",
+  "timeout_ms": 300000,
+  "model": "claude-sonnet-4-20250514"
+}

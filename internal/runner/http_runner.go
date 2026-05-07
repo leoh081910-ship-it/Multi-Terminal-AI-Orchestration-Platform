@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"text/template"
@@ -48,6 +49,20 @@ type HTTPRunnerConfig struct {
 
 	// Model is the model name, used to populate CapabilityManifest.
 	Model string `json:"model,omitempty"`
+}
+
+// Validate checks that the HTTPRunnerConfig has all required fields and sane values.
+func (c HTTPRunnerConfig) Validate() error {
+	if strings.TrimSpace(c.Endpoint) == "" {
+		return fmt.Errorf("endpoint is required")
+	}
+	if _, err := url.Parse(c.Endpoint); err != nil {
+		return fmt.Errorf("endpoint is not a valid URL: %w", err)
+	}
+	if c.TimeoutMs < 0 {
+		return fmt.Errorf("timeout_ms must be non-negative, got %d", c.TimeoutMs)
+	}
+	return nil
 }
 
 // expandEnv expands ${VAR} patterns in a string using os.Getenv.

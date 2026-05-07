@@ -313,6 +313,9 @@ func BuildRunner(in BuilderInput) (runner.Runner, error) {
 				return nil, fmt.Errorf("invalid HTTP runner config: %w", err)
 			}
 		}
+		if err := cfg.Validate(); err != nil {
+			return nil, fmt.Errorf("HTTP runner config validation failed: %w", err)
+		}
 		return runner.NewHTTPRunner(in.AgentID, in.AgentName, cfg), nil
 
 	case runner.RunnerTypeMCP:
@@ -321,6 +324,9 @@ func BuildRunner(in BuilderInput) (runner.Runner, error) {
 			if err := json.Unmarshal(in.Config, &cfg); err != nil {
 				return nil, fmt.Errorf("invalid MCP runner config: %w", err)
 			}
+		}
+		if err := cfg.Validate(); err != nil {
+			return nil, fmt.Errorf("MCP runner config validation failed: %w", err)
 		}
 		return runner.NewMCPRunner(in.AgentID, in.AgentName, cfg), nil
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -36,6 +37,23 @@ type MCPRunnerConfig struct {
 
 	// ToolsEnabled indicates whether this runner uses MCP tools.
 	ToolsEnabled bool `json:"tools_enabled,omitempty"`
+}
+
+// Validate checks that the MCPRunnerConfig has all required fields and sane values.
+func (c MCPRunnerConfig) Validate() error {
+	if strings.TrimSpace(c.Endpoint) == "" {
+		return fmt.Errorf("endpoint is required")
+	}
+	if _, err := url.Parse(c.Endpoint); err != nil {
+		return fmt.Errorf("endpoint is not a valid URL: %w", err)
+	}
+	if c.Transport != "" && c.Transport != "http" && c.Transport != "sse" {
+		return fmt.Errorf("transport must be 'http' or 'sse', got %q", c.Transport)
+	}
+	if c.TimeoutMs < 0 {
+		return fmt.Errorf("timeout_ms must be non-negative, got %d", c.TimeoutMs)
+	}
+	return nil
 }
 
 // mcpRequest is a JSON-RPC 2.0 request.
