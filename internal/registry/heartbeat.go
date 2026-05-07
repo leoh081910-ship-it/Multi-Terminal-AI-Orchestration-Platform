@@ -35,7 +35,7 @@ func (r *Registry) heartbeatLoop(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// runHealthChecks checks all registered agents and updates their status.
+// runHealthChecks checks all registered agents and refreshes their capability manifests.
 func (r *Registry) runHealthChecks(ctx context.Context) {
 	entries := r.ListEntries()
 	for _, entry := range entries {
@@ -47,6 +47,13 @@ func (r *Registry) runHealthChecks(ctx context.Context) {
 		}
 		if entry.Status != newStatus {
 			r.SetStatus(agentID, newStatus)
+		}
+
+		// Proactively refresh capability manifest so the router always has fresh data
+		if newStatus != StatusError {
+			if _, err := r.Manifest(ctx, agentID); err != nil {
+				r.logger.Debug().Err(err).Str("agent_id", agentID).Msg("capability refresh skipped")
+			}
 		}
 	}
 }

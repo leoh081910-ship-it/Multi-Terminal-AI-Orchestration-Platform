@@ -197,20 +197,46 @@ type detectedCapabilities struct {
 
 // detectCLICapabilities runs the agent CLI with --version to extract model info.
 // Returns nil if detection fails (non-fatal — defaults are still used).
+// Supports claude, gemini, codex, and any CLI whose name matches the agentID.
 func detectCLICapabilities(ctx context.Context, agentID string) *detectedCapabilities {
-	// Try "claude --version" first
-	out, err := runCapture(ctx, "claude", "--version")
+	cliName := inferCLIName(agentID)
+
+	// Try "<cli> --version" first
+	out, err := runCapture(ctx, cliName, "--version")
 	if err == nil && len(out) > 0 {
-		return parseVersionOutput(string(out), "claude")
+		return parseVersionOutput(string(out), cliName)
 	}
 
-	// Try "claude code --version"
-	out, err = runCapture(ctx, "claude", "code", "--version")
+	// Try "<cli> code --version" (e.g., "claude code --version")
+	out, err = runCapture(ctx, cliName, "code", "--version")
 	if err == nil && len(out) > 0 {
-		return parseVersionOutput(string(out), "claude")
+		return parseVersionOutput(string(out), cliName)
+	}
+
+	// Fallback: if agentID != cliName, also try the agentID directly
+	if agentID != cliName {
+		out, err = runCapture(ctx, agentID, "--version")
+		if err == nil && len(out) > 0 {
+			return parseVersionOutput(string(out), agentID)
+		}
 	}
 
 	return nil
+}
+
+// inferCLIName maps an agent ID to the CLI binary name to try for version detection.
+func inferCLIName(agentID string) string {
+	lower := strings.ToLower(agentID)
+	switch {
+	case strings.Contains(lower, "claude"):
+		return "claude"
+	case strings.Contains(lower, "gemini"):
+		return "gemini"
+	case strings.Contains(lower, "codex"):
+		return "codex"
+	default:
+		return agentID
+	}
 }
 
 // runCapture runs a command and captures stdout.
