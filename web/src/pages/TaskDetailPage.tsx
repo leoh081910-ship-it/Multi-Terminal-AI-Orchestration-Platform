@@ -36,41 +36,23 @@ export default function TaskDetailPage() {
 
   const [activeTab, setActiveTab] = useState<'details' | 'lineage' | 'logs' | 'agent-calls'>('details');
 
-  const { isLoading, error } = useQuery({
+  const { data: taskData = null, isLoading, error } = useQuery({
     queryKey: ['task', projectId, taskId],
-    queryFn: () => schedulerApi.getTaskExecution(projectId, taskId!).then(() =>
-      fetchTask()
-    ),
+    queryFn: async () => {
+      await schedulerApi.getTaskExecution(projectId, taskId!);
+      const tasks = await schedulerApi.getTasks(projectId);
+      return tasks.find(t => t.id === taskId) || null;
+    },
     enabled: !!taskId && !!projectId,
   });
-
-  const [taskData, setTaskData] = useState<ScheduledTask | null>(null);
-
-  async function fetchTask() {
-    const tasks = await schedulerApi.getTasks(projectId);
-    const found = tasks.find(t => t.id === taskId);
-    setTaskData(found || null);
-    return found;
-  }
-
-  useEffect(() => {
-    if (projectId && taskId) fetchTask();
-  }, [projectId, taskId]);
 
   // Real-time updates via WebSocket
   useEffect(() => {
     if (!lastMessage || !taskId) return;
     if (lastMessage.task_id === taskId || lastMessage.type === 'task.state_changed') {
-      fetchTask();
       qc.invalidateQueries({ queryKey: ['task', projectId, taskId] });
     }
   }, [lastMessage, taskId, projectId, qc]);
-
-  const { data: _execution } = useQuery({
-    queryKey: ['execution', projectId, taskId],
-    queryFn: () => schedulerApi.getTaskExecution(projectId, taskId!),
-    enabled: !!taskId && !!projectId,
-  });
 
   const { data: lineage } = useQuery({
     queryKey: ['lineage', projectId, taskId],
@@ -86,12 +68,12 @@ export default function TaskDetailPage() {
 
   const retryMutation = useMutation({
     mutationFn: () => schedulerApi.retryTask(projectId, taskId!),
-    onSuccess: () => { fetchTask(); qc.invalidateQueries({ queryKey: ['task', projectId, taskId] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', projectId, taskId] }); },
   });
 
   const dispatchMutation = useMutation({
     mutationFn: () => schedulerApi.dispatchTask(projectId, taskId!),
-    onSuccess: () => { fetchTask(); qc.invalidateQueries({ queryKey: ['task', projectId, taskId] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', projectId, taskId] }); },
   });
 
   if (isLoading) return <div className="p-8 text-center text-gray-400">Loading...</div>;

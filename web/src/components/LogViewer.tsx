@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useReducer } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { WSMessage } from '../hooks/useWebSocket';
 
@@ -10,6 +10,26 @@ interface LogEntry {
   source?: string;
 }
 
+interface LogState {
+  entries: LogEntry[];
+  maxLines: number;
+}
+
+type LogAction =
+  | { type: 'append'; entry: LogEntry; maxLines: number }
+  | { type: 'clear' };
+
+function logReducer(state: LogState, action: LogAction): LogState {
+  switch (action.type) {
+    case 'append': {
+      const next = [...state.entries, action.entry];
+      return { entries: next.length > action.maxLines ? next.slice(-action.maxLines) : next, maxLines: action.maxLines };
+    }
+    case 'clear':
+      return { ...state, entries: [] };
+  }
+}
+
 interface LogViewerProps {
   projectId?: string;
   taskId?: string;
@@ -19,7 +39,7 @@ interface LogViewerProps {
 
 export default function LogViewer({ projectId, taskId, maxLines = 500, height = '400px' }: LogViewerProps) {
   const { lastMessage, connected } = useWebSocket(projectId);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [{ entries: logs }, dispatchLogs] = useReducer(logReducer, { entries: [], maxLines });
   const [search, setSearch] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -34,10 +54,7 @@ export default function LogViewer({ projectId, taskId, maxLines = 500, height = 
     // Filter by taskId if specified
     if (taskId && lastMessage.task_id && lastMessage.task_id !== taskId) return;
 
-    setLogs(prev => {
-      const next = [...prev, entry];
-      return next.length > maxLines ? next.slice(-maxLines) : next;
-    });
+    dispatchLogs({ type: 'append', entry, maxLines });
   }, [lastMessage, taskId, maxLines]);
 
   // Auto-scroll
@@ -80,7 +97,7 @@ export default function LogViewer({ projectId, taskId, maxLines = 500, height = 
             className="px-2 py-1 bg-gray-700 text-gray-200 text-xs rounded border border-gray-600 focus:outline-none focus:border-blue-500 w-48"
           />
           <button
-            onClick={() => setLogs([])}
+            onClick={() => dispatchLogs({ type: 'clear' })}
             className="px-2 py-1 text-xs text-gray-400 hover:text-gray-200 bg-gray-700 rounded"
           >
             Clear

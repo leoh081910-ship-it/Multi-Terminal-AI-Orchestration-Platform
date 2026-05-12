@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { orgApi, type Agent, type AgentScore, type CapabilityManifest } from '../api/orgApi';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -69,8 +69,11 @@ const RUNNER_TYPE_META: Record<string, { color: string; label: string }> = {
 };
 
 function AgentCard({ agent, orgId }: { agent: Agent; orgId: string }) {
+  const queryClient = useQueryClient();
   const statusColor = STATUS_COLORS[agent.status] || '#888';
-  const isOnline = agent.last_heartbeat_at && (Date.now() - new Date(agent.last_heartbeat_at).getTime() < 60000);
+  const agentsState = queryClient.getQueryState<Agent[]>(['agents', orgId]);
+  const checkedAt = agentsState?.dataUpdatedAt ?? 0;
+  const isOnline = Boolean(agent.last_heartbeat_at && checkedAt - new Date(agent.last_heartbeat_at).getTime() < 60000);
   const meta = RUNNER_TYPE_META[agent.runner_type ?? 'cli'] ?? RUNNER_TYPE_META.cli;
 
   const [showCaps, setShowCaps] = useState(false);
