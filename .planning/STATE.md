@@ -190,6 +190,12 @@ Status: completed
 |---|-------------|------|--------|-----------|
 | 260513-0mv | 修复当前项目检查发现的前端 lint 问题，并查看开发计划摘要 | 2026-05-12 | 6b6270c | [260513-0mv-lint](./quick/260513-0mv-lint/) |
 
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 6 added: v3-P3 HTTPRunner + MCPRunner — 支持 HTTP API 型 Agent 和 MCP 协议 Agent。范围来自 .planning/v3-implementation-plan.md Phase 3：HTTPRunner 核心、HTTP 配置 Schema、MCPRunner 基础、MCP 能力发现、示例配置、端到端测试。
+
 ## Milestone Summary
 
 runtime-reliability milestone 完整收口：

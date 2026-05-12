@@ -196,6 +196,16 @@
 | OBS-01 | Runner 执行链路追踪 | P5 |
 | OBS-02 | Prometheus Agent 指标 | P5 |
 
+### Phase 6: v3-P3 HTTPRunner + MCPRunner — 支持 HTTP API 型 Agent 和 MCP 协议 Agent。范围来自 .planning/v3-implementation-plan.md Phase 3：HTTPRunner 核心、HTTP 配置 Schema、MCPRunner 基础、MCP 能力发现、示例配置、端到端测试。
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 6 to break down)
+
 ---
 
 *Generated: 2026-04-06*
