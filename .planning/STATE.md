@@ -188,7 +188,7 @@ Status: completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260513-0mv | 修复当前项目检查发现的前端 lint 问题，并查看开发计划摘要 | 2026-05-12 | pending | [260513-0mv-lint](./quick/260513-0mv-lint/) |
+| 260513-0mv | 修复当前项目检查发现的前端 lint 问题，并查看开发计划摘要 | 2026-05-12 | 6b6270c | [260513-0mv-lint](./quick/260513-0mv-lint/) |
 
 ## Milestone Summary
 
