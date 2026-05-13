@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -53,15 +54,40 @@ type HTTPRunnerConfig struct {
 
 // Validate checks that the HTTPRunnerConfig has all required fields and sane values.
 func (c HTTPRunnerConfig) Validate() error {
-	if strings.TrimSpace(c.Endpoint) == "" {
+	endpoint := strings.TrimSpace(c.Endpoint)
+	if endpoint == "" {
 		return fmt.Errorf("endpoint is required")
 	}
-	if _, err := url.Parse(c.Endpoint); err != nil {
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
 		return fmt.Errorf("endpoint is not a valid URL: %w", err)
 	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("endpoint scheme must be http or https")
+	}
+	if u.Host == "" {
+		return fmt.Errorf("endpoint host is required")
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(c.Method))
+	if method == "" {
+		method = http.MethodPost
+	}
+	if !slices.Contains([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch}, method) {
+		return fmt.Errorf("method must be one of GET, POST, PUT, PATCH")
+	}
+
 	if c.TimeoutMs < 0 {
 		return fmt.Errorf("timeout_ms must be non-negative, got %d", c.TimeoutMs)
 	}
+
+	if c.BodyTemplate != "" {
+		if _, err := newBodyTemplate(c.BodyTemplate); err != nil {
+			return fmt.Errorf("invalid body template: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -216,10 +242,21 @@ func (r *HTTPRunner) Execute(ctx context.Context, task RunnerTask) (*RunnerResul
 	}, nil
 }
 
+func toJSON(value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func newBodyTemplate(bodyTemplate string) (*template.Template, error) {
+	return template.New("body").Funcs(template.FuncMap{"toJSON": toJSON}).Parse(bodyTemplate)
+}
+
 // renderBody renders the body template with the RunnerTask data.
 func (r *HTTPRunner) renderBody(task RunnerTask) ([]byte, error) {
 	if r.config.BodyTemplate == "" {
-		// No template — use a default payload based on RunnerTask.Context
 		payload := map[string]interface{}{
 			"task_id":   task.ID,
 			"task_type": task.Type,
@@ -232,8 +269,7 @@ func (r *HTTPRunner) renderBody(task RunnerTask) ([]byte, error) {
 		return json.Marshal(payload)
 	}
 
-	// Render the template
-	tmpl, err := template.New("body").Parse(r.config.BodyTemplate)
+	tmpl, err := newBodyTemplate(r.config.BodyTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("invalid body template: %w", err)
 	}

@@ -198,13 +198,18 @@
 
 ### Phase 6: v3-P3 HTTPRunner + MCPRunner — 支持 HTTP API 型 Agent 和 MCP 协议 Agent。范围来自 .planning/v3-implementation-plan.md Phase 3：HTTPRunner 核心、HTTP 配置 Schema、MCPRunner 基础、MCP 能力发现、示例配置、端到端测试。
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** HTTPRunner/MCPRunner hardened for Phase 6 contract, org API pre-persistence validation, AgentWorkbench frontend alignment, docs/examples reconciliation.
+**Requirements**: HTTP-01, MCP-01
 **Depends on:** Phase 5
-**Plans:** 0 plans
+**Plans:** 6 plans — all complete
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 6 to break down)
+- [x] 01: HTTPRunner config validation + template support
+- [x] 02: MCPRunner Phase 6 hardening (tool_name, HTTP-only, {name,arguments})
+- [x] 03: Org Agent API pre-persistence runner validation
+- [x] 04: AgentWorkbench frontend Phase 6 alignment
+- [x] 05: Docs/examples reconciliation
+- [x] 06: Full regression + validation gate
 
 ---
 

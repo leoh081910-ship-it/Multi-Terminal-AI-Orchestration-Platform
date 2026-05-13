@@ -22,7 +22,7 @@ type MCPRunnerConfig struct {
 	// Endpoint is the full URL of the MCP server's HTTP endpoint.
 	Endpoint string `json:"endpoint"`
 
-	// Transport is the MCP transport type: "http" (default) or "sse" (Server-Sent Events).
+	// Transport is the MCP transport type. Phase 6 supports HTTP only.
 	Transport string `json:"transport,omitempty"`
 
 	// Headers are extra HTTP headers to include in every request.
@@ -35,21 +35,44 @@ type MCPRunnerConfig struct {
 	// TimeoutMs is the request timeout in milliseconds. Defaults to 300000 (5min).
 	TimeoutMs int64 `json:"timeout_ms,omitempty"`
 
+	// ToolName is the MCP tool invoked via tools/call. Defaults to execute_task.
+	ToolName string `json:"tool_name,omitempty"`
+
 	// ToolsEnabled indicates whether this runner uses MCP tools.
 	ToolsEnabled bool `json:"tools_enabled,omitempty"`
 }
 
 // Validate checks that the MCPRunnerConfig has all required fields and sane values.
 func (c MCPRunnerConfig) Validate() error {
-	if strings.TrimSpace(c.Endpoint) == "" {
+	endpoint := strings.TrimSpace(c.Endpoint)
+	if endpoint == "" {
 		return fmt.Errorf("endpoint is required")
 	}
-	if _, err := url.Parse(c.Endpoint); err != nil {
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
 		return fmt.Errorf("endpoint is not a valid URL: %w", err)
 	}
-	if c.Transport != "" && c.Transport != "http" && c.Transport != "sse" {
-		return fmt.Errorf("transport must be 'http' or 'sse', got %q", c.Transport)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("endpoint must use http or https")
 	}
+	if u.Host == "" {
+		return fmt.Errorf("endpoint must include a host")
+	}
+
+	transport := strings.TrimSpace(c.Transport)
+	switch transport {
+	case "", "http":
+	case "sse":
+		return fmt.Errorf("transport sse is not supported in Phase 6; use http")
+	default:
+		return fmt.Errorf("transport must be http")
+	}
+
+	if c.ToolName != "" && strings.TrimSpace(c.ToolName) == "" {
+		return fmt.Errorf("tool_name is required")
+	}
+
 	if c.TimeoutMs < 0 {
 		return fmt.Errorf("timeout_ms must be non-negative, got %d", c.TimeoutMs)
 	}
@@ -131,31 +154,30 @@ func (r *MCPRunner) String() string { return r.id }
 func (r *MCPRunner) ID() string { return r.id }
 
 // Execute sends a task to the MCP server as a JSON-RPC request.
-// The RunnerTask.Context is serialized and sent as the params.
-// For basic execution, it calls the MCP server's "tools/call" method with
-// task context as parameters.
+// It calls the MCP server's tools/call method with MCP-standard name/arguments params.
 func (r *MCPRunner) Execute(ctx context.Context, task RunnerTask) (*RunnerResult, error) {
 	start := time.Now()
 
-	// Build the params for the MCP execution call
-	// We use "execute" or fall back to a generic call method
-	params := map[string]interface{}{
+	arguments := map[string]interface{}{
 		"task_id":   task.ID,
 		"task_type": task.Type,
 	}
 	if task.Context != nil {
 		for k, v := range task.Context {
-			params[k] = v
+			arguments[k] = v
 		}
 	}
-	// Include workspace info if available
 	if task.Workspace.Path != "" {
-		params["workspace_path"] = task.Workspace.Path
+		arguments["workspace_path"] = task.Workspace.Path
 	}
 	if len(task.FilesToModify) > 0 {
-		params["files_to_modify"] = task.FilesToModify
+		arguments["files_to_modify"] = task.FilesToModify
 	}
 
+	params := map[string]interface{}{
+		"name":      r.toolName(),
+		"arguments": arguments,
+	}
 	paramsJSON, err := json.Marshal(params)
 	if err != nil {
 		return &RunnerResult{
@@ -164,7 +186,7 @@ func (r *MCPRunner) Execute(ctx context.Context, task RunnerTask) (*RunnerResult
 			ExitCode: -1,
 			Duration: time.Since(start),
 		}, err
-	}
+		}
 
 	// Build the JSON-RPC request
 	rpcReq := mcpRequest{
@@ -195,13 +217,7 @@ func (r *MCPRunner) Execute(ctx context.Context, task RunnerTask) (*RunnerResult
 		}, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	if r.config.AuthToken != "" {
-		req.Header.Set("Authorization", expandEnv(r.config.AuthToken))
-	}
-	for k, v := range r.config.Headers {
-		req.Header.Set(k, expandEnv(v))
-	}
+	r.applyHeaders(req)
 
 	// Execute the request
 	resp, err := r.client.Do(req)
@@ -316,13 +332,7 @@ func (r *MCPRunner) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("health check request creation failed: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if r.config.AuthToken != "" {
-		req.Header.Set("Authorization", expandEnv(r.config.AuthToken))
-	}
-	for k, v := range r.config.Headers {
-		req.Header.Set(k, expandEnv(v))
-	}
+	r.applyHeaders(req)
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -353,10 +363,7 @@ func (r *MCPRunner) Cancel(ctx context.Context, taskID string) error {
 	if err != nil {
 		return nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if r.config.AuthToken != "" {
-		req.Header.Set("Authorization", expandEnv(r.config.AuthToken))
-	}
+	r.applyHeaders(req)
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -384,6 +391,23 @@ func (r *MCPRunner) GetCapabilities(ctx context.Context) (*CapabilityManifest, e
 	return r.manifest, nil
 }
 
+func (r *MCPRunner) toolName() string {
+	if strings.TrimSpace(r.config.ToolName) == "" {
+		return "execute_task"
+	}
+	return strings.TrimSpace(r.config.ToolName)
+}
+
+func (r *MCPRunner) applyHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	if r.config.AuthToken != "" {
+		req.Header.Set("Authorization", expandEnv(r.config.AuthToken))
+	}
+	for k, v := range r.config.Headers {
+		req.Header.Set(k, expandEnv(v))
+	}
+}
+
 // discoverTools queries the MCP server for available tools.
 // It sends a tools/list request and returns the tool names.
 func (r *MCPRunner) discoverTools(ctx context.Context) ([]string, error) {
@@ -399,10 +423,7 @@ func (r *MCPRunner) discoverTools(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if r.config.AuthToken != "" {
-		req.Header.Set("Authorization", expandEnv(r.config.AuthToken))
-	}
+	r.applyHeaders(req)
 
 	resp, err := r.client.Do(req)
 	if err != nil {

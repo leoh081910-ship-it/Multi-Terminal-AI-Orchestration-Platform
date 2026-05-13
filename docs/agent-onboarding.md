@@ -1,6 +1,6 @@
 # Agent Onboarding Guide
 
-This guide covers adding a new AI agent to the orchestration platform. Three runner types are supported: CLI, HTTP, and MCP.
+This guide covers registering HTTP and MCP agents via the org Agent API.
 
 ## Prerequisites
 
@@ -8,101 +8,56 @@ This guide covers adding a new AI agent to the orchestration platform. Three run
 - Access to the platform API (default: `http://localhost:8080/api/v1`)
 - Organization ID for scoping
 
-## Option 1: CLI Agent
+## Register an HTTP Agent
 
-Use when the agent runs as a local CLI tool (e.g., `claude`, `gemini`, `codex`).
-
-### Registration
+HTTP agents call external AI APIs (OpenAI, Anthropic, Ollama, etc.) via templated HTTP requests.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/orgs/{orgID}/agents \
   -H 'Content-Type: application/json' \
   -d '{
-    "agent_id": "my-agent",
-    "name": "My Custom Agent",
-    "runner_type": "cli",
-    "runner_config": {
-      "base_path": "/tmp/worktrees",
-      "main_repo": "/path/to/main/repo"
-    }
-  }'
-```
-
-### runner_config fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `base_path` | Yes | Parent directory for git worktrees |
-| `main_repo` | Yes | Path to the main git repository |
-
-### How it works
-
-CLIRunner wraps the existing transport layer. It creates a worktree under `base_path/{taskID}`, executes the agent CLI, and collects artifacts. The agent CLI must support standard task execution patterns.
-
-### Capability detection
-
-CLIRunner auto-detects capabilities by running `{cli} --version`. Supported CLIs:
-
-- `claude` — Detects model family (opus/sonnet/haiku) and version
-- `gemini` — Detects version
-- `codex` — Detects version
-
-For custom CLIs, the agent ID is used as the binary name.
-
-## Option 2: HTTP Agent
-
-Use when the agent exposes an HTTP API (OpenAI, Anthropic, Ollama, custom endpoints).
-
-### Registration
-
-```bash
-curl -X POST http://localhost:8080/api/v1/orgs/{orgID}/agents \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "agent_id": "openai-gpt4",
     "name": "OpenAI GPT-4o",
+    "type": "http-agent",
     "runner_type": "http",
-    "runner_config": {
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "method": "POST",
-      "headers": {
-        "Content-Type": "application/json"
-      },
-      "auth_token": "Bearer ${OPENAI_API_KEY}",
-      "body_template": "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":{{.Prompt | toJSON}}}]}",
-      "output_path": "choices[0].message.content",
-      "timeout_ms": 300000,
-      "model": "gpt-4o"
-    }
+    "runner_config": "{\"endpoint\":\"https://api.openai.com/v1/chat/completions\",\"method\":\"POST\",\"auth_token\":\"Bearer ${OPENAI_API_KEY}\",\"body_template\":\"{\\\"model\\\":\\\"gpt-4o\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":{{.Context.prompt | toJSON}}}]}\"}\",\"output_path\":\"choices[0].message.content\",\"timeout_ms\":300000,\"model\":\"gpt-4o\"}"
   }'
 ```
+
+Key points:
+- `runner_config` is a **JSON string**, not a nested object.
+- Validation rejects missing/invalid endpoints, unsupported methods, and malformed templates before the agent is persisted.
+- No network calls are made during registration; unreachable endpoints are accepted.
 
 ### runner_config fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `endpoint` | Yes | Target HTTP URL |
-| `method` | No | HTTP method (default: `POST`) |
-| `headers` | No | Additional headers (JSON object) |
+| `endpoint` | Yes | Target HTTP URL (http or https) |
+| `method` | No | HTTP method: GET, POST, PUT, PATCH (default: POST) |
+| `headers` | No | Additional headers |
 | `auth_token` | No | Bearer token or API key. Supports `${ENV_VAR}` expansion |
-| `body_template` | No | Go template for request body. Available: `.Prompt`, `.TaskID`, `.Command`, `.FilesToModify` |
-| `output_path` | No | Dot-notation path to extract from JSON response (e.g., `choices[0].message.content`) |
-| `timeout_ms` | No | Request timeout in milliseconds (default: 60000) |
+| `body_template` | No | Go `text/template` for request body |
+| `output_path` | No | Dot-notation path to extract from response (e.g., `choices[0].message.content`) |
+| `timeout_ms` | No | Timeout in milliseconds (default: 300000) |
 | `model` | No | Model identifier for capability manifest |
 
 ### Template variables
 
-The `body_template` uses Go `text/template` syntax:
+The `body_template` uses Go `text/template` syntax with a `toJSON` filter:
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `.Prompt` | string | Task prompt/command content |
-| `.TaskID` | string | Task identifier |
-| `.Command` | string | Shell command to execute |
-| `.FilesToModify` | []string | Files the task should modify |
-| `.Context` | map[string]any | Additional context key-value pairs |
+| `{{.ID}}` | string | Task ID |
+| `{{.Type}}` | string | Task type |
+| `{{.Command}}` | string | Shell command |
+| `{{.Shell}}` | string | Shell name (bash, powershell) |
+| `{{.Context.field}}` | any | Task context field |
+| `{{.FilesToModify \| toJSON}}` | JSON | Files list serialized |
+| `{{.Workspace.Path}}` | string | Workspace directory path |
+| `{{index .Env "KEY"}}` | string | Environment variable |
+| `{{.Timeout}}` | duration | Task timeout |
 
-Use `{{.Prompt | toJSON}}` for safe JSON string embedding.
+When `body_template` is omitted, the default payload is `{"task_id":..., "task_type":..., ...context fields}`.
 
 ### Example configs
 
@@ -111,43 +66,47 @@ See `docs/examples/` for complete configurations:
 - `http-runner-anthropic.json` — Anthropic Claude
 - `http-runner-ollama.json` — Ollama local LLM
 
-## Option 3: MCP Agent
+## Register an MCP Agent
 
-Use when the agent implements the Model Context Protocol (JSON-RPC over HTTP/SSE).
-
-### Registration
+MCP agents communicate via JSON-RPC 2.0 over HTTP.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/orgs/{orgID}/agents \
   -H 'Content-Type: application/json' \
   -d '{
-    "agent_id": "my-mcp-server",
-    "name": "My MCP Server",
+    "name": "Local MCP Agent",
+    "type": "mcp-agent",
     "runner_type": "mcp",
-    "runner_config": {
-      "endpoint": "http://localhost:3001/mcp",
-      "transport": "http",
-      "timeout_ms": 120000,
-      "tool_name": "execute_task"
-    }
+    "runner_config": "{\"endpoint\":\"http://localhost:3000/mcp\",\"transport\":\"http\",\"tool_name\":\"execute_task\",\"tools_enabled\":true}"
   }'
 ```
+
+Key points:
+- `runner_config` is a **JSON string**.
+- `transport` must be `http`. Phase 6 rejects `sse` at validation.
+- `tool_name` defaults to `execute_task` when omitted.
+- The runner sends `tools/call` with `{"name": tool_name, "arguments": {task_id, task_type, ...context}}`.
 
 ### runner_config fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `endpoint` | Yes | MCP server URL |
-| `transport` | No | `"http"` (Streamable HTTP) or `"sse"` (Server-Sent Events). Default: `"http"` |
-| `timeout_ms` | No | Request timeout in milliseconds (default: 60000) |
-| `tool_name` | No | Tool name for execution calls (default: `"execute_task"`) |
+| `endpoint` | Yes | MCP server URL (http or https) |
+| `transport` | No | Must be `"http"` (Phase 6). Default: `"http"` |
+| `tool_name` | No | Tool invoked via `tools/call` (default: `execute_task`) |
+| `tools_enabled` | No | Enable MCP tool use |
+| `auth_token` | No | Bearer token. Supports `${ENV_VAR}` |
+| `timeout_ms` | No | Timeout in milliseconds (default: 300000) |
 
-### How it works
+## Validation Errors
 
-MCPRunner performs:
-1. `initialize` handshake on first connection
-2. `tools/list` to discover available tools
-3. `tools/call` with the configured `tool_name` for task execution
+If `runner_config` is invalid, the API returns HTTP 400 before persisting:
+
+```json
+{"success": false, "error": "HTTP runner config validation failed: endpoint is required"}
+```
+
+The agent is **not created** in the database when validation fails. Update requests with invalid config also return 400 and preserve the existing agent state.
 
 ## Post-Registration
 
@@ -164,15 +123,10 @@ curl -X POST http://localhost:8080/api/v1/orgs/{orgID}/agents/{agentID}/heartbea
 curl http://localhost:8080/api/v1/orgs/{orgID}/agents/{agentID}/capabilities
 ```
 
-## Routing
+## Testing
 
-Agents are automatically routed to tasks based on their CapabilityManifest. To explicitly assign:
+All HTTP/MCP runner tests use local `httptest.NewServer` fake services — no external API calls, no network dependencies.
 
-- Set `owner_agent` in the task payload to the agent ID
-- Set `owner_agent: "auto"` for intelligent routing
-
-## Monitoring
-
-- Agent call history: `GET /api/tasks/{taskID}/agent-calls`
-- Prometheus metrics: `agent_requests_total`, `agent_duration_seconds`
-- Structured logs with `trace_id` throughout execution chain
+```bash
+go test ./internal/runner ./internal/registry ./internal/server -count=1
+```

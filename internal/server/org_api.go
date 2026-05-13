@@ -253,6 +253,18 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: "invalid request body"})
 		return
 	}
+
+	effectiveType := input.RunnerType
+	if effectiveType == "" {
+		effectiveType = "cli"
+	}
+	if effectiveType == "http" || effectiveType == "mcp" {
+		if _, err := s.validateRunnerBuild("pending", input.Name, effectiveType, input.RunnerConfig); err != nil {
+			s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
+			return
+		}
+	}
+
 	a, err := s.orgSvc.CreateAgent(r.Context(), chi.URLParam(r, "orgID"), input)
 	if err != nil {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
@@ -287,6 +299,30 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: "invalid request body"})
 		return
 	}
+
+	// Load existing agent to compute effective post-update config
+	existing, err := s.orgSvc.GetAgent(r.Context(), agentID)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	effectiveType := existing.RunnerType
+	effectiveConfig := existing.RunnerConfig
+	if input.RunnerType != nil {
+		effectiveType = *input.RunnerType
+	}
+	if input.RunnerConfig != nil {
+		effectiveConfig = *input.RunnerConfig
+	}
+
+	if effectiveType == "http" || effectiveType == "mcp" {
+		if _, err := s.validateRunnerBuild(agentID, existing.Name, effectiveType, effectiveConfig); err != nil {
+			s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
+			return
+		}
+	}
+
 	a, err := s.orgSvc.UpdateAgent(r.Context(), agentID, input)
 	if err != nil {
 		s.writeJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
@@ -357,6 +393,20 @@ type runnerConfigExtract struct {
 	BasePath     string `json:"base_path"`
 	MainRepo     string `json:"main_repo"`
 	ArtifactBase string `json:"artifact_base"`
+}
+
+func (s *Server) validateRunnerBuild(agentID, agentName, runnerType, runnerConfig string) (runner.Runner, error) {
+	rt := registry.RunnerTypeFromString(runnerType)
+	var raw json.RawMessage
+	if runnerConfig != "" && runnerConfig != "{}" {
+		raw = json.RawMessage(runnerConfig)
+	}
+	return registry.BuildRunner(registry.BuilderInput{
+		AgentID:    agentID,
+		AgentName:  agentName,
+		RunnerType: rt,
+		Config:     raw,
+	})
 }
 
 func (s *Server) buildRunnerFromAgentView(a *org.AgentView) runner.Runner {

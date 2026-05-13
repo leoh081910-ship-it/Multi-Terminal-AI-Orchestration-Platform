@@ -1699,3 +1699,163 @@ func TestStartupRecoverySkipsRecentReviewPending(t *testing.T) {
 		t.Fatalf("expected recent review_pending task to stay in review_pending, got %q", task.State)
 	}
 }
+
+// --- Phase 6: org Agent API runner config validation ---
+
+func createTestOrg(t *testing.T, srv *Server) string {
+	t.Helper()
+	body := bytes.NewBufferString(`{"name":"test-org"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create org: expected %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+	var resp struct {
+		Data struct{ ID string `json:"id"` } `json:"data"`
+	}
+	json.NewDecoder(res.Body).Decode(&resp)
+	return resp.Data.ID
+}
+
+func TestHandleCreateAgent_InvalidHTTPRunnerConfig(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	orgID := createTestOrg(t, srv)
+
+	body := bytes.NewBufferString(`{"name":"bad-http","type":"worker","runner_type":"http","runner_config":"{}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+orgID+"/agents", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid HTTP config, got %d: %s", res.Code, res.Body.String())
+	}
+
+	// Verify agent was not persisted
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+orgID+"/agents", nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	var listResp struct {
+		Data []struct{ ID string `json:"id"` } `json:"data"`
+	}
+	json.NewDecoder(res.Body).Decode(&listResp)
+	for _, a := range listResp.Data {
+		if a.ID != "" {
+			t.Fatal("expected no agents after invalid create, but found one")
+		}
+	}
+}
+
+func TestHandleCreateAgent_InvalidMCPRunnerConfig(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	orgID := createTestOrg(t, srv)
+
+	body := bytes.NewBufferString(`{"name":"bad-mcp","type":"worker","runner_type":"mcp","runner_config":"{\"endpoint\":\"http://localhost:3000/mcp\",\"transport\":\"sse\"}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+orgID+"/agents", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for MCP SSE config, got %d: %s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "sse") {
+		t.Fatalf("expected SSE error in response, got %s", res.Body.String())
+	}
+}
+
+func TestHandleCreateAgent_ValidRunnerConfigDoesNotDial(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	orgID := createTestOrg(t, srv)
+
+	// Unreachable endpoint should succeed because validation is local only
+	body := bytes.NewBufferString(`{"name":"valid-http","type":"worker","runner_type":"http","runner_config":"{\"endpoint\":\"http://127.0.0.1:1/run\"}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+orgID+"/agents", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for valid HTTP config, got %d: %s", res.Code, res.Body.String())
+	}
+}
+
+func TestHandleUpdateAgent_InvalidRunnerConfigPreservesExisting(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	orgID := createTestOrg(t, srv)
+
+	// Create a valid HTTP agent
+	body := bytes.NewBufferString(`{"name":"good-http","type":"worker","runner_type":"http","runner_config":"{\"endpoint\":\"http://127.0.0.1:1/run\"}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+orgID+"/agents", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", res.Code, res.Body.String())
+	}
+	var createResp struct {
+		Data struct {
+			ID           string `json:"id"`
+			RunnerConfig string `json:"runner_config"`
+		} `json:"data"`
+	}
+	json.NewDecoder(res.Body).Decode(&createResp)
+	agentID := createResp.Data.ID
+	originalConfig := createResp.Data.RunnerConfig
+
+	// PATCH with invalid config
+	body = bytes.NewBufferString(`{"runner_config":"{}"}`)
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/"+orgID+"/agents/"+agentID, body)
+	req.Header.Set("Content-Type", "application/json")
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("update: expected 400, got %d: %s", res.Code, res.Body.String())
+	}
+
+	// Verify original config preserved
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+orgID+"/agents/"+agentID, nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	var getResp struct {
+		Data struct {
+			RunnerConfig string `json:"runner_config"`
+		} `json:"data"`
+	}
+	json.NewDecoder(res.Body).Decode(&getResp)
+	if getResp.Data.RunnerConfig != originalConfig {
+		t.Fatalf("expected config preserved after failed update, got %q vs %q", getResp.Data.RunnerConfig, originalConfig)
+	}
+}
+
+func TestHandleUpdateAgent_ValidRunnerConfig(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	orgID := createTestOrg(t, srv)
+
+	// Create HTTP agent
+	body := bytes.NewBufferString(`{"name":"http-to-update","type":"worker","runner_type":"http","runner_config":"{\"endpoint\":\"http://127.0.0.1:1/run\"}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+orgID+"/agents", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	var createResp struct {
+		Data struct{ ID string `json:"id"` } `json:"data"`
+	}
+	json.NewDecoder(res.Body).Decode(&createResp)
+	agentID := createResp.Data.ID
+
+	// PATCH to valid MCP config
+	mcpConfig := `{"endpoint":"http://127.0.0.1:1/mcp"}`
+	body = bytes.NewBufferString(`{"runner_type":"mcp","runner_config":"` + strings.ReplaceAll(mcpConfig, `"`, `\"`) + `"}`)
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/"+orgID+"/agents/"+agentID, body)
+	req.Header.Set("Content-Type", "application/json")
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("update to MCP: expected 200, got %d: %s", res.Code, res.Body.String())
+	}
+}

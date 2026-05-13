@@ -1,0 +1,11 @@
+{
+  "_comment": "Local MCP server via MCPRunner — JSON-RPC over HTTP",
+  "_usage": "POST /api/v1/orgs/{orgID}/agents with runner_type='mcp' and this as runner_config",
+  "_requirement": "MCP server must be running locally and accept JSON-RPC 2.0 POST requests",
+
+  "endpoint": "http://localhost:3000/mcp",
+  "transport": "http",
+  "tool_name": "execute_task",
+  "tools_enabled": true,
+  "timeout_ms": 300000
+}

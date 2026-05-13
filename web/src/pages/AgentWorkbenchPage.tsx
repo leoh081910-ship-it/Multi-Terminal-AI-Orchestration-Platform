@@ -242,13 +242,16 @@ function HTTPAgentForm({ orgId }: { orgId: string }) {
   const [bodyTemplate, setBodyTemplate] = useState('');
   const [outputPath, setOutputPath] = useState('');
   const [timeoutMs, setTimeoutMs] = useState('300000');
+  const [mcpToolName, setMcpToolName] = useState('execute_task');
   const [showForm, setShowForm] = useState(false);
   const [formError, setFormError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const queryClient = useQueryClient();
 
   const createAgent = useMutation({
     mutationFn: (input: Parameters<typeof orgApi.createAgent>[1]) => orgApi.createAgent(orgId, input),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', orgId] });
       setSuccessMsg(`${runnerType.toUpperCase()} Agent registered successfully`);
       setFormError('');
       setAgentName('');
@@ -258,6 +261,7 @@ function HTTPAgentForm({ orgId }: { orgId: string }) {
       setBodyTemplate('');
       setOutputPath('');
       setTimeoutMs('300000');
+      setMcpToolName('execute_task');
       setShowForm(false);
       setTimeout(() => setSuccessMsg(''), 4000);
     },
@@ -283,6 +287,7 @@ function HTTPAgentForm({ orgId }: { orgId: string }) {
     if (runnerType === 'mcp') {
       runnerConfig.transport = 'http';
       runnerConfig.tools_enabled = true;
+      runnerConfig.tool_name = mcpToolName.trim() || 'execute_task';
     }
 
     createAgent.mutate({
@@ -345,6 +350,13 @@ function HTTPAgentForm({ orgId }: { orgId: string }) {
               <input value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} placeholder="300000" style={INPUT_STYLE} />
             </div>
 
+            {runnerType === 'mcp' && (
+              <div>
+                <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Tool Name</label>
+                <input value={mcpToolName} onChange={(e) => setMcpToolName(e.target.value)} placeholder="execute_task" style={INPUT_STYLE} />
+              </div>
+            )}
+
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Body Template (Go template syntax)</label>
               <textarea
@@ -359,6 +371,21 @@ function HTTPAgentForm({ orgId }: { orgId: string }) {
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Output Path (dot-notation)</label>
               <input value={outputPath} onChange={(e) => setOutputPath(e.target.value)} placeholder="choices[0].message.content" style={INPUT_STYLE} />
+            </div>
+
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 4 }}>Config Preview (read-only)</label>
+              <pre style={{ background: '#0a0b10', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, padding: 10, color: '#555', fontSize: 10, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>
+                {JSON.stringify({
+                  endpoint: endpoint.trim() || '(required)',
+                  ...(authToken.trim() ? { auth_token: '***' } : {}),
+                  ...(model.trim() ? { model: model.trim() } : {}),
+                  ...(bodyTemplate.trim() ? { body_template: '...' } : {}),
+                  ...(outputPath.trim() ? { output_path: outputPath.trim() } : {}),
+                  timeout_ms: parseInt(timeoutMs) || 300000,
+                  ...(runnerType === 'mcp' ? { transport: 'http', tool_name: mcpToolName.trim() || 'execute_task', tools_enabled: true } : {}),
+                }, null, 2)}
+              </pre>
             </div>
           </div>
 

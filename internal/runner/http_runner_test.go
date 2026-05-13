@@ -30,9 +30,34 @@ func TestHTTPRunnerConfig_Validate(t *testing.T) {
 			wantErr: "endpoint is required",
 		},
 		{
+			name:    "relative endpoint",
+			cfg:     HTTPRunnerConfig{Endpoint: "/run"},
+			wantErr: "endpoint scheme must be http or https",
+		},
+		{
+			name:    "hostless endpoint",
+			cfg:     HTTPRunnerConfig{Endpoint: "http:///run"},
+			wantErr: "endpoint host is required",
+		},
+		{
+			name:    "non-http scheme",
+			cfg:     HTTPRunnerConfig{Endpoint: "ftp://example.test/run"},
+			wantErr: "endpoint scheme must be http or https",
+		},
+		{
+			name:    "invalid method",
+			cfg:     HTTPRunnerConfig{Endpoint: "http://localhost:8080", Method: "TRACE"},
+			wantErr: "method must be one of GET, POST, PUT, PATCH",
+		},
+		{
 			name: "negative timeout",
 			cfg:  HTTPRunnerConfig{Endpoint: "http://localhost:8080", TimeoutMs: -1},
 			wantErr: "timeout_ms must be non-negative",
+		},
+		{
+			name:    "invalid template",
+			cfg:     HTTPRunnerConfig{Endpoint: "http://localhost:8080/v1/chat", BodyTemplate: `{{.Context.prompt`},
+			wantErr: "invalid body template",
 		},
 		{
 			name: "valid config",
@@ -110,6 +135,17 @@ func TestHTTPRunner_Execute(t *testing.T) {
 	}
 }
 
+func TestHTTPRunner_TemplateToJSON(t *testing.T) {
+	cfg := HTTPRunnerConfig{
+		Endpoint:     "http://localhost:8080",
+		BodyTemplate: `{"prompt": {{.Context.prompt | toJSON}}}`,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate failed: %v", err)
+	}
+}
+
 func TestHTTPRunner_Execute_TemplateBody(t *testing.T) {
 	var receivedBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,16 +155,37 @@ func TestHTTPRunner_Execute_TemplateBody(t *testing.T) {
 	defer srv.Close()
 
 	runner := NewHTTPRunner("test", "test-agent", HTTPRunnerConfig{
-		Endpoint:     srv.URL,
-		BodyTemplate: `{"model":"{{.Context.model}}","prompt":"{{.Context.prompt}}"}`,
-		OutputPath:   "result",
+		Endpoint: srv.URL,
+		BodyTemplate: `{
+			"id":"{{.ID}}",
+			"type":"{{.Type}}",
+			"command":"{{.Command}}",
+			"shell":"{{.Shell}}",
+			"files": {{.FilesToModify | toJSON}},
+			"workspace":"{{.Workspace.Path}}",
+			"path":"{{index .Env "PATH"}}",
+			"issue":"{{.Context.issue}}",
+			"payload": {{.Context.payload | toJSON}},
+			"timeout":"{{.Timeout}}"
+		}`,
+		OutputPath: "result",
 	})
 
 	result, err := runner.Execute(context.Background(), RunnerTask{
-		ID: "task-1",
+		ID:            "task-1",
+		Type:          "feature",
+		Command:       "echo hi",
+		Shell:         "bash",
+		FilesToModify: []string{"a.go", "b.go"},
+		Workspace: Workspace{Path: "/tmp/workspace"},
+		Env: map[string]string{
+			"PATH": "/usr/bin",
+		},
 		Context: map[string]interface{}{
-			"model":  "gpt-4o",
-			"prompt": "hello",
+			"issue": "ISSUE-1",
+			"payload": map[string]interface{}{
+				"nested": []interface{}{"x", 2, true},
+			},
 		},
 	})
 	if err != nil {
@@ -137,8 +194,75 @@ func TestHTTPRunner_Execute_TemplateBody(t *testing.T) {
 	if !result.Success {
 		t.Errorf("expected success")
 	}
-	if receivedBody["model"] != "gpt-4o" {
-		t.Errorf("expected model gpt-4o, got %v", receivedBody["model"])
+	if receivedBody["id"] != "task-1" {
+		t.Errorf("expected id task-1, got %v", receivedBody["id"])
+	}
+	if receivedBody["type"] != "feature" {
+		t.Errorf("expected type feature, got %v", receivedBody["type"])
+	}
+	if receivedBody["command"] != "echo hi" {
+		t.Errorf("expected command echo hi, got %v", receivedBody["command"])
+	}
+	if receivedBody["shell"] != "bash" {
+		t.Errorf("expected shell bash, got %v", receivedBody["shell"])
+	}
+	if receivedBody["workspace"] != "/tmp/workspace" {
+		t.Errorf("expected workspace /tmp/workspace, got %v", receivedBody["workspace"])
+	}
+	if receivedBody["path"] != "/usr/bin" {
+		t.Errorf("expected path /usr/bin, got %v", receivedBody["path"])
+	}
+	if receivedBody["issue"] != "ISSUE-1" {
+		t.Errorf("expected issue ISSUE-1, got %v", receivedBody["issue"])
+	}
+	files, ok := receivedBody["files"].([]interface{})
+		if !ok || len(files) != 2 {
+		t.Fatalf("expected files array len 2, got %T %#v", receivedBody["files"], receivedBody["files"])
+	}
+	payload, ok := receivedBody["payload"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected payload object, got %T", receivedBody["payload"])
+	}
+	nested, ok := payload["nested"].([]interface{})
+	if !ok || len(nested) != 3 {
+		t.Fatalf("expected nested array len 3, got %#v", payload["nested"])
+	}
+}
+
+func TestHTTPRunner_Execute_DefaultBody(t *testing.T) {
+	var receivedBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		json.NewEncoder(w).Encode(map[string]interface{}{"result": "ok"})
+	}))
+	defer srv.Close()
+
+	runner := NewHTTPRunner("test", "test-agent", HTTPRunnerConfig{
+		Endpoint:   srv.URL,
+		OutputPath: "result",
+	})
+
+	result, err := runner.Execute(context.Background(), RunnerTask{
+		ID:   "task-1",
+		Type: "feature",
+		Context: map[string]interface{}{
+			"issue": "ISSUE-2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected success")
+	}
+	if receivedBody["task_id"] != "task-1" {
+		t.Errorf("expected task_id task-1, got %v", receivedBody["task_id"])
+	}
+	if receivedBody["task_type"] != "feature" {
+		t.Errorf("expected task_type feature, got %v", receivedBody["task_type"])
+	}
+	if receivedBody["issue"] != "ISSUE-2" {
+		t.Errorf("expected issue ISSUE-2, got %v", receivedBody["issue"])
 	}
 }
 

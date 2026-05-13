@@ -37,9 +37,13 @@ The `body_template` field uses Go `text/template` syntax. Available variables:
 |----------|-------------|
 | `{{.ID}}` | Task ID |
 | `{{.Type}}` | Task type (feature, bugfix, etc.) |
+| `{{.Command}}` | Shell command string |
+| `{{.Shell}}` | Shell name (bash, powershell) |
 | `{{.Context.field}}` | Any field from the task context map |
-| `{{.FilesToModify}}` | List of files the agent should modify |
+| `{{.FilesToModify \| toJSON}}` | Files list serialized as JSON |
 | `{{.Workspace.Path}}` | Workspace directory path |
+| `{{index .Env "KEY"}}` | Environment variable by key |
+| `{{.Timeout}}` | Task timeout duration |
 
 ## Output Extraction
 
@@ -59,6 +63,12 @@ For MCP protocol agents, use `runner_type: "mcp"` with this config format:
 {
   "endpoint": "http://localhost:3000/mcp",
   "transport": "http",
+  "tool_name": "execute_task",
   "tools_enabled": true
 }
 ```
+
+Phase 6 supports HTTP transport only; `transport: "sse"` is rejected at validation.
+The `tool_name` field defaults to `execute_task` when omitted.
+
+See `mcp-runner-local.json` for a complete example.
