@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	entdialect "entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agentcall"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/event"
 	"github.com/rs/zerolog"
 	_ "modernc.org/sqlite"
@@ -391,6 +393,191 @@ func TestCleanupTaskResourcesRemovesPathsAndClearsColumns(t *testing.T) {
 	}
 	if strings.Contains(task.CardJSON, filepath.ToSlash(workspacePath)) || strings.Contains(task.CardJSON, filepath.ToSlash(artifactPath)) {
 		t.Fatalf("expected card_json paths to be cleared, got %s", task.CardJSON)
+	}
+}
+
+func TestDeleteTaskRemovesTaskAndRelatedRows(t *testing.T) {
+	repo, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	tempRoot := t.TempDir()
+	workspacePath := filepath.Join(tempRoot, "delete-workspace")
+	artifactPath := filepath.Join(tempRoot, "delete-artifacts")
+
+	if err := os.MkdirAll(workspacePath, 0755); err != nil {
+		t.Fatalf("failed to create workspace path: %v", err)
+	}
+	if err := os.MkdirAll(artifactPath, 0755); err != nil {
+		t.Fatalf("failed to create artifact path: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspacePath, "state.txt"), []byte("running"), 0644); err != nil {
+		t.Fatalf("failed to seed workspace file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactPath, "result.json"), []byte(`{"ok":true}`), 0644); err != nil {
+		t.Fatalf("failed to seed artifact file: %v", err)
+	}
+
+	_, err := repo.CreateTask(ctx, &TaskCard{
+		ID:          "task-delete-001",
+		DispatchRef: "dispatch-delete",
+		Transport:   "cli",
+		Wave:        1,
+		CardJSON:    `{"id":"task-delete-001","dispatch_ref":"dispatch-delete","state":"running","transport":"cli","wave":1,"workspace_path":"` + filepath.ToSlash(workspacePath) + `","artifact_path":"` + filepath.ToSlash(artifactPath) + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	if err := repo.CreateEvent(ctx, &EventData{
+		EventID:   "evt-delete-1",
+		TaskID:    "task-delete-001",
+		EventType: "state_transition",
+		FromState: "queued",
+		ToState:   "running",
+		Timestamp: time.Now().UTC(),
+		Attempt:   0,
+		Transport: "cli",
+	}); err != nil {
+		t.Fatalf("CreateEvent failed: %v", err)
+	}
+
+	if err := repo.RecordAgentCall(ctx, &AgentCallRecord{
+		ID:         "call-delete-1",
+		TaskID:     "task-delete-001",
+		AgentID:    "agent-cli",
+		RunnerType: "cli",
+		TaskType:   "execution",
+		Status:     "success",
+		DurationMs: 120,
+		StartedAt:  time.Now().UTC().Add(-2 * time.Second),
+		FinishedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("RecordAgentCall failed: %v", err)
+	}
+
+	deleted, err := repo.DeleteTask(ctx, "task-delete-001")
+	if err != nil {
+		t.Fatalf("DeleteTask failed: %v", err)
+	}
+	if !deleted {
+		t.Fatal("expected DeleteTask to return deleted=true")
+	}
+
+	task, err := repo.GetTaskByID(ctx, "task-delete-001")
+	if err != nil {
+		t.Fatalf("GetTaskByID after delete failed: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("expected task row to be deleted, got %+v", task)
+	}
+
+	eventCount, err := repo.client.Event.Query().Where(event.TaskID("task-delete-001")).Count(ctx)
+	if err != nil {
+		t.Fatalf("failed to count events after delete: %v", err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("expected event rows to be deleted, got %d", eventCount)
+	}
+
+	callCount, err := repo.client.AgentCall.Query().Where(agentcall.TaskID("task-delete-001")).Count(ctx)
+	if err != nil {
+		t.Fatalf("failed to count agent_calls after delete: %v", err)
+	}
+	if callCount != 0 {
+		t.Fatalf("expected agent call rows to be deleted, got %d", callCount)
+	}
+
+	if _, err := os.Stat(workspacePath); !os.IsNotExist(err) {
+		t.Fatalf("expected workspace path to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
+		t.Fatalf("expected artifact path to be removed, stat err=%v", err)
+	}
+}
+
+func TestDeleteTaskReturnsFalseWhenMissing(t *testing.T) {
+	repo, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	deleted, err := repo.DeleteTask(ctx, "missing-task")
+	if err != nil {
+		t.Fatalf("DeleteTask failed: %v", err)
+	}
+	if deleted {
+		t.Fatal("expected DeleteTask to return deleted=false for missing task")
+	}
+}
+
+func TestListEventsByTaskIDReturnsOrderedEvents(t *testing.T) {
+	repo, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	baseTs := time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC)
+
+	_, err := repo.CreateTask(ctx, &TaskCard{
+		ID:          "task-events-ordered",
+		DispatchRef: "dispatch-events",
+		Transport:   "cli",
+		Wave:        1,
+		CardJSON:    `{"id":"task-events-ordered","dispatch_ref":"dispatch-events","state":"queued","transport":"cli","wave":1}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	_, err = repo.CreateTask(ctx, &TaskCard{
+		ID:          "task-events-other",
+		DispatchRef: "dispatch-events",
+		Transport:   "cli",
+		Wave:        1,
+		CardJSON:    `{"id":"task-events-other","dispatch_ref":"dispatch-events","state":"queued","transport":"cli","wave":1}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask other failed: %v", err)
+	}
+
+	if err := repo.CreateEvent(ctx, &EventData{EventID: "evt-b", TaskID: "task-events-ordered", EventType: "state_transition", FromState: "queued", ToState: "running", Timestamp: baseTs, Transport: "cli"}); err != nil {
+		t.Fatalf("CreateEvent evt-b failed: %v", err)
+	}
+	if err := repo.CreateEvent(ctx, &EventData{EventID: "evt-a", TaskID: "task-events-ordered", EventType: "state_transition", FromState: "running", ToState: "done", Timestamp: baseTs, Transport: "cli"}); err != nil {
+		t.Fatalf("CreateEvent evt-a failed: %v", err)
+	}
+	if err := repo.CreateEvent(ctx, &EventData{EventID: "evt-c", TaskID: "task-events-ordered", EventType: "state_transition", FromState: "done", ToState: "done", Timestamp: baseTs.Add(time.Second), Transport: "cli"}); err != nil {
+		t.Fatalf("CreateEvent evt-c failed: %v", err)
+	}
+	if err := repo.CreateEvent(ctx, &EventData{EventID: "evt-other", TaskID: "task-events-other", EventType: "state_transition", FromState: "queued", ToState: "running", Timestamp: baseTs.Add(-time.Second), Transport: "cli"}); err != nil {
+		t.Fatalf("CreateEvent evt-other failed: %v", err)
+	}
+
+	events, err := repo.ListEventsByTaskID(ctx, "task-events-ordered")
+	if err != nil {
+		t.Fatalf("ListEventsByTaskID failed: %v", err)
+	}
+
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events for target task, got %d", len(events))
+	}
+
+	gotIDs := []string{events[0].EventID, events[1].EventID, events[2].EventID}
+	expectedIDs := []string{"evt-a", "evt-b", "evt-c"}
+	for i := range expectedIDs {
+		if gotIDs[i] != expectedIDs[i] {
+			t.Fatalf("expected event order %v, got %v", expectedIDs, gotIDs)
+		}
+	}
+
+	emptyEvents, err := repo.ListEventsByTaskID(ctx, "missing-task")
+	if err != nil {
+		t.Fatalf("ListEventsByTaskID for missing task failed: %v", err)
+	}
+	if emptyEvents == nil {
+		t.Fatal("expected empty slice, got nil")
+	}
+	if len(emptyEvents) != 0 {
+		t.Fatalf("expected empty slice for missing task, got %d events", len(emptyEvents))
 	}
 }
 

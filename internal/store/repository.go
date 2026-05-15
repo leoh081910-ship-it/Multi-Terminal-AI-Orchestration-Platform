@@ -14,6 +14,7 @@ import (
 
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/agentcall"
+	"github.com/mCP-DevOS/ai-orchestration-platform/ent/event"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/task"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent/wave"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
@@ -337,6 +338,55 @@ func (r *Repository) ListAllTasks(ctx context.Context) ([]*ent.Task, error) {
 		return nil, fmt.Errorf("failed to list tasks: %w", err)
 	}
 	return tasks, nil
+}
+
+// DeleteTask removes a task and related rows atomically.
+func (r *Repository) DeleteTask(ctx context.Context, taskID string) (bool, error) {
+	existing, err := r.client.Task.Get(ctx, taskID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get task for delete: %w", err)
+	}
+
+	for _, path := range uniqueNonEmptyStrings(existing.WorkspacePath, existing.ArtifactPath) {
+		if err := os.RemoveAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("failed to remove task resource %s: %w", path, err)
+		}
+	}
+
+	if err := r.WithTx(ctx, func(tx *ent.Tx) error {
+		if _, err := tx.Event.Delete().Where(event.TaskID(taskID)).Exec(ctx); err != nil {
+			return fmt.Errorf("failed to delete task events: %w", err)
+		}
+		if _, err := tx.AgentCall.Delete().Where(agentcall.TaskID(taskID)).Exec(ctx); err != nil {
+			return fmt.Errorf("failed to delete task agent calls: %w", err)
+		}
+		if err := tx.Task.DeleteOneID(taskID).Exec(ctx); err != nil {
+			return fmt.Errorf("failed to delete task: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// ListEventsByTaskID returns persisted events for one task in stable order.
+func (r *Repository) ListEventsByTaskID(ctx context.Context, taskID string) ([]*ent.Event, error) {
+	events, err := r.client.Event.Query().
+		Where(event.TaskID(taskID)).
+		Order(event.ByTimestamp(), event.ByEventID()).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list task events: %w", err)
+	}
+	if events == nil {
+		return []*ent.Event{}, nil
+	}
+	return events, nil
 }
 
 // UpdateTask updates task fields.

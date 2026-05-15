@@ -69,8 +69,6 @@ func (s *Service) CreateBackup(ctx context.Context) (*BackupInfo, error) {
 
 	now := time.Now().UTC()
 	timestamp := now.Format("20060102-150405.000000000")
-	filename := fmt.Sprintf("backup-%s.db", timestamp)
-	dest := filepath.Join(s.backupDir, filename)
 
 	src, err := os.Open(s.dbPath)
 	if err != nil {
@@ -79,10 +77,25 @@ func (s *Service) CreateBackup(ctx context.Context) (*BackupInfo, error) {
 	}
 	defer src.Close()
 
-	dst, err := os.Create(dest)
-	if err != nil {
-		s.recordFailure(err)
-		return nil, fmt.Errorf("create backup file: %w", err)
+	var (
+		filename string
+		dest     string
+		dst      *os.File
+	)
+	for attempt := 0; ; attempt++ {
+		filename = fmt.Sprintf("backup-%s.db", timestamp)
+		if attempt > 0 {
+			filename = fmt.Sprintf("backup-%s-%d.db", timestamp, attempt)
+		}
+		dest = filepath.Join(s.backupDir, filename)
+		dst, err = os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			s.recordFailure(err)
+			return nil, fmt.Errorf("create backup file: %w", err)
+		}
 	}
 	defer dst.Close()
 

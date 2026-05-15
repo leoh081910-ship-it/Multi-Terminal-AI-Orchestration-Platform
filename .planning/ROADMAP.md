@@ -29,9 +29,10 @@
   5. Event logging records all state transitions atomically with task updates (PERS-05)
   6. Wave CRUD operations work (create, query, seal) with `(dispatch_ref, wave)` uniqueness enforcement
   7. SQLite uses WAL mode + busy_timeout for concurrent access (PERS-06)
-**Plans:** 2 plans
+**Plans:** 3 plans
 - [x] 01-foundation-01-PLAN.md — Go module + ent schemas + code generation ✓
 - [x] 01-foundation-02-PLAN.md — Repository + server + health check ✓
+- [x] 01-foundation-03-PLAN.md — Close API-01 REST gaps with task delete and persisted event query ✓
 
 ### Phase 2: Core Engine
 **Goal**: 13-state machine orchestration with dependency and wave management
@@ -116,7 +117,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/2 | ✓ Complete | 2026-04-07 |
+| 1. Foundation | 3/3 | ✓ Complete | 2026-05-15 |
 | 2. Core Engine | — | ✓ Complete | 2026-04-09 |
 | 3. Execution Layer | — | ✓ Complete | 2026-04-10 |
 | 4. Integration | — | ✓ Complete | 2026-04-11 |

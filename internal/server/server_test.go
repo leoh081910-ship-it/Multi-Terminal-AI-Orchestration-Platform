@@ -419,6 +419,130 @@ func TestServerRetryFlowPreservesPhase1TaskBehavior(t *testing.T) {
 	}
 }
 
+func TestHandleDeleteTaskRemovesTaskAndReturns404Afterwards(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	taskID := createTestTask(t, repo, engine.StateQueued)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/"+taskID, nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+
+	var deletePayload struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&deletePayload); err != nil {
+		t.Fatalf("failed to decode delete response: %v", err)
+	}
+	if !deletePayload.Success || deletePayload.Data["id"] != taskID || deletePayload.Data["deleted"] != true {
+		t.Fatalf("unexpected delete response: %+v", deletePayload)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/tasks/"+taskID, nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d after delete, got %d", http.StatusNotFound, res.Code)
+	}
+}
+
+func TestHandleDeleteTaskReturns404WhenMissing(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/missing-task", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+
+	var payload APIResponse
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.Success || payload.Error != "task not found" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
+func TestHandleListTaskEventsReturnsPersistedTransitions(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	baseTs := time.Date(2026, 5, 16, 9, 0, 0, 0, time.UTC)
+	_, err := repo.CreateTask(ctx, &store.TaskCard{
+		ID:          "task-events-api",
+		DispatchRef: "dispatch-events-api",
+		Transport:   "cli",
+		Wave:        1,
+		CardJSON:    `{"id":"task-events-api","dispatch_ref":"dispatch-events-api","state":"queued","transport":"cli","wave":1}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+	if err := repo.CreateEvent(ctx, &store.EventData{EventID: "evt-02", TaskID: "task-events-api", EventType: "state_transition", FromState: "running", ToState: "done", Timestamp: baseTs.Add(time.Second), Transport: "cli"}); err != nil {
+		t.Fatalf("CreateEvent evt-02 failed: %v", err)
+	}
+	if err := repo.CreateEvent(ctx, &store.EventData{EventID: "evt-01", TaskID: "task-events-api", EventType: "state_transition", FromState: "queued", ToState: "running", Timestamp: baseTs, Transport: "cli"}); err != nil {
+		t.Fatalf("CreateEvent evt-01 failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks/task-events-api/events", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+
+	var payload struct {
+		Success bool         `json:"success"`
+		Data    []*ent.Event `json:"data"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode event list response: %v", err)
+	}
+	if !payload.Success || len(payload.Data) != 2 {
+		t.Fatalf("unexpected payload: success=%v len=%d", payload.Success, len(payload.Data))
+	}
+	if payload.Data[0].EventID != "evt-01" || payload.Data[0].FromState != "queued" || payload.Data[0].ToState != "running" {
+		t.Fatalf("unexpected first event: %+v", payload.Data[0])
+	}
+	if payload.Data[1].EventID != "evt-02" || payload.Data[1].FromState != "running" || payload.Data[1].ToState != "done" {
+		t.Fatalf("unexpected second event: %+v", payload.Data[1])
+	}
+}
+
+func TestHandleListTaskEventsReturns404WhenTaskMissing(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks/missing-task/events", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
+	}
+
+	var payload APIResponse
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.Success || payload.Error != "task not found" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
 func TestHandleRetryTask_Conflict(t *testing.T) {
 	srv, repo, cleanup := setupTestServer(t)
 	defer cleanup()

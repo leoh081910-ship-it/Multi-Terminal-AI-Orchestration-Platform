@@ -195,6 +195,8 @@ func (s *Server) setupRoutes() {
 			r.Route("/{id}", func(r chi.Router) {
 				r.Get("/", s.handleGetTask)
 				r.Put("/", s.handleUpdateTask)
+				r.Delete("/", s.handleDeleteTask)
+				r.Get("/events", s.handleListTaskEvents)
 				r.Post("/cancel", s.handleCancelTask)
 				r.Post("/retry", s.handleRetryTask)
 				r.Get("/agent-calls", s.handleGetTaskAgentCalls)
@@ -412,6 +414,73 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    map[string]string{"id": id},
+	})
+}
+
+func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	deleted, err := s.repo.DeleteTask(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to delete task")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to delete task",
+		})
+		return
+	}
+	if !deleted {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "task not found",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"id":      id,
+			"deleted": true,
+		},
+	})
+}
+
+func (s *Server) handleListTaskEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to get task for event list")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to get task events",
+		})
+		return
+	}
+	if task == nil {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "task not found",
+		})
+		return
+	}
+
+	events, err := s.repo.ListEventsByTaskID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to list task events")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to get task events",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    events,
 	})
 }
 
