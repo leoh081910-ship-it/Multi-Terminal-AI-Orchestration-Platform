@@ -11,6 +11,8 @@ import SwimLanePage from './pages/SwimLanePage';
 import OrganizationPage from './pages/OrganizationPage';
 import KnowledgeSpacePage from './pages/KnowledgeSpacePage';
 import TaskDetailPage from './pages/TaskDetailPage';
+import WaveManagementPage from './pages/WaveManagementPage';
+import EventLogPage from './pages/EventLogPage';
 import './styles/global.css';
 
 const queryClient = new QueryClient({
@@ -31,6 +33,8 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<OrchestratorHome />} />
               <Route path="board" element={<SchedulerBoard />} />
+              <Route path="waves" element={<WaveManagementPage />} />
+              <Route path="events" element={<EventLogPage />} />
               <Route path="timeline" element={<TimelinePage />} />
               <Route path="goals" element={<GoalPage />} />
               <Route path="agents" element={<AgentWorkbenchPage />} />

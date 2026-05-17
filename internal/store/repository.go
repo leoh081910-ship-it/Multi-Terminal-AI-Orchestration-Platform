@@ -317,6 +317,28 @@ func (r *Repository) ListTasksByDispatchRef(ctx context.Context, dispatchRef str
 	return tasks, nil
 }
 
+// ListTasksByProject retrieves all tasks for a given project.
+func (r *Repository) ListTasksByProject(ctx context.Context, projectID string) ([]*ent.Task, error) {
+	tasks, err := r.client.Task.Query().
+		Where(task.ProjectID(projectID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project tasks: %w", err)
+	}
+	return tasks, nil
+}
+
+// ListTasksByProjectAndDispatchRef retrieves all tasks for a given project and dispatch reference.
+func (r *Repository) ListTasksByProjectAndDispatchRef(ctx context.Context, projectID, dispatchRef string) ([]*ent.Task, error) {
+	tasks, err := r.client.Task.Query().
+		Where(task.ProjectID(projectID), task.DispatchRef(dispatchRef)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project dispatch tasks: %w", err)
+	}
+	return tasks, nil
+}
+
 // ListTasksByState retrieves all tasks in a given state.
 func (r *Repository) ListTasksByState(ctx context.Context, state string) ([]*ent.Task, error) {
 	tasks, err := r.client.Task.Query().
@@ -382,6 +404,42 @@ func (r *Repository) ListEventsByTaskID(ctx context.Context, taskID string) ([]*
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list task events: %w", err)
+	}
+	if events == nil {
+		return []*ent.Event{}, nil
+	}
+	return events, nil
+}
+
+// ListEventsByProject returns persisted events for one project, optionally filtered by dispatch or task.
+func (r *Repository) ListEventsByProject(ctx context.Context, projectID, dispatchRef, taskID string) ([]*ent.Event, error) {
+	query := r.client.Event.Query().
+		Where(event.ProjectID(projectID))
+
+	if taskID != "" {
+		query = query.Where(event.TaskID(taskID))
+	}
+
+	if dispatchRef != "" {
+		tasks, err := r.ListTasksByProjectAndDispatchRef(ctx, projectID, dispatchRef)
+		if err != nil {
+			return nil, err
+		}
+		if len(tasks) == 0 {
+			return []*ent.Event{}, nil
+		}
+		taskIDs := make([]string, 0, len(tasks))
+		for _, taskRow := range tasks {
+			taskIDs = append(taskIDs, taskRow.ID)
+		}
+		query = query.Where(event.TaskIDIn(taskIDs...))
+	}
+
+	events, err := query.
+		Order(event.ByTimestamp(sql.OrderDesc()), event.ByEventID(sql.OrderDesc())).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project events: %w", err)
 	}
 	if events == nil {
 		return []*ent.Event{}, nil
@@ -720,6 +778,21 @@ func (r *Repository) GetWave(ctx context.Context, dispatchRef string, waveNum in
 		return nil, fmt.Errorf("failed to get wave: %w", err)
 	}
 	return w, nil
+}
+
+// ListWavesByProject retrieves all waves for a given project.
+func (r *Repository) ListWavesByProject(ctx context.Context, projectID string) ([]*ent.Wave, error) {
+	waves, err := r.client.Wave.Query().
+		Where(wave.ProjectID(projectID)).
+		Order(wave.ByDispatchRef(), wave.ByWave()).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project waves: %w", err)
+	}
+	if waves == nil {
+		return []*ent.Wave{}, nil
+	}
+	return waves, nil
 }
 
 // SealWave marks a wave as sealed.

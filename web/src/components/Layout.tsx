@@ -1,7 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet } from 'react-router-dom';
-import { FolderKanban, Kanban, Plus, Terminal, GanttChartSquare, GitBranch, Users, LayoutDashboard, Building2, BookOpen } from 'lucide-react';
+import { FolderKanban, Kanban, Plus, Terminal, GanttChartSquare, GitBranch, Users, LayoutDashboard, Building2, BookOpen, Activity, Layers3 } from 'lucide-react';
 import { projectsApi } from '../api/projectsApi';
 import { useProject } from '../hooks/useProject';
 import type { CreateProjectInput } from '../types/project';
@@ -28,9 +28,13 @@ const Layout: React.FC = () => {
   const [createError, setCreateError] = useState<string | null>(null);
   const [form, setForm] = useState<CreateProjectInput>(createDefaultForm());
   const hasMultipleProjects = projects.length > 1;
-  const navItems = [
+  const primaryNavItems = [
     { to: '/', icon: <Terminal size={20} />, label: '控制中心' },
     { to: '/board', icon: <Kanban size={20} />, label: '调度看板' },
+    { to: '/waves', icon: <Layers3 size={20} />, label: 'Wave 管理' },
+    { to: '/events', icon: <Activity size={20} />, label: '事件日志' },
+  ];
+  const secondaryNavItems = [
     { to: '/timeline', icon: <GanttChartSquare size={20} />, label: '时间线' },
     { to: '/goals', icon: <GitBranch size={20} />, label: '目标管理' },
     { to: '/agents', icon: <Users size={20} />, label: 'Agent 工作台' },
@@ -116,31 +120,66 @@ const Layout: React.FC = () => {
           </div>
         </div>
 
-        <nav style={{ flex: 1 }}>
-          <ul style={{ listStyle: 'none' }}>
-            {navItems.map((item) => (
-              <li key={item.to} style={{ marginBottom: '0.5rem' }}>
-                <NavLink
-                  to={item.to}
-                  style={({ isActive }) => ({
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.75rem 1rem',
-                    borderRadius: '8px',
-                    textDecoration: 'none',
-                    color: isActive ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                    background: isActive ? 'rgba(0, 242, 234, 0.08)' : 'transparent',
-                    transition: 'all 0.2s ease',
-                    fontWeight: isActive ? 600 : 400,
-                  })}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </NavLink>
-              </li>
-            ))}
-          </ul>
+        <nav style={{ flex: 1, display: 'grid', gap: '1.25rem' }}>
+          <div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '0.6rem' }}>
+              核心入口
+            </div>
+            <ul style={{ listStyle: 'none' }}>
+              {primaryNavItems.map((item) => (
+                <li key={item.to} style={{ marginBottom: '0.5rem' }}>
+                  <NavLink
+                    to={item.to}
+                    style={({ isActive }) => ({
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '8px',
+                      textDecoration: 'none',
+                      color: isActive ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                      background: isActive ? 'rgba(0, 242, 234, 0.08)' : 'transparent',
+                      transition: 'all 0.2s ease',
+                      fontWeight: isActive ? 600 : 400,
+                    })}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '0.6rem' }}>
+              扩展视图
+            </div>
+            <ul style={{ listStyle: 'none' }}>
+              {secondaryNavItems.map((item) => (
+                <li key={item.to} style={{ marginBottom: '0.5rem' }}>
+                  <NavLink
+                    to={item.to}
+                    style={({ isActive }) => ({
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '8px',
+                      textDecoration: 'none',
+                      color: isActive ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                      background: isActive ? 'rgba(0, 242, 234, 0.08)' : 'transparent',
+                      transition: 'all 0.2s ease',
+                      fontWeight: isActive ? 600 : 400,
+                    })}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
         </nav>
       </aside>
 

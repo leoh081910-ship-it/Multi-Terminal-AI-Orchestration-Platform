@@ -163,6 +163,33 @@ type compatAgentsSummary struct {
 	Agents []compatAgentSummaryItem `json:"agents"`
 }
 
+type compatWaveSummary struct {
+	ProjectID      string         `json:"project_id"`
+	DispatchRef    string         `json:"dispatch_ref"`
+	Wave           int            `json:"wave"`
+	Status         string         `json:"status"`
+	TaskCount      int            `json:"task_count"`
+	CountsByStatus map[string]int `json:"counts_by_status"`
+	CreatedAt      time.Time      `json:"created_at"`
+	SealedAt       *time.Time     `json:"sealed_at,omitempty"`
+}
+
+type compatEventRecord struct {
+	EventID     string    `json:"event_id"`
+	ProjectID   string    `json:"project_id"`
+	TaskID      string    `json:"task_id"`
+	DispatchRef string    `json:"dispatch_ref,omitempty"`
+	EventType   string    `json:"event_type"`
+	FromState   string    `json:"from_state,omitempty"`
+	ToState     string    `json:"to_state,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
+	Reason      string    `json:"reason,omitempty"`
+	Attempt     int       `json:"attempt"`
+	Transport   string    `json:"transport,omitempty"`
+	RunnerID    string    `json:"runner_id,omitempty"`
+	Details     string    `json:"details,omitempty"`
+}
+
 func (s *Server) handleCompatListProjects(w http.ResponseWriter, r *http.Request) {
 	registry := s.getProjectRegistry()
 	if registry == nil {
@@ -237,6 +264,156 @@ func (s *Server) handleCompatListSchedulerTasks(w http.ResponseWriter, r *http.R
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+func (s *Server) handleCompatListTaskEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	taskID := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to load compatibility task events")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load task events"})
+		return
+	}
+	if task == nil || !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	events, err := s.repo.ListEventsByTaskID(ctx, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to list compatibility task events")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load task events"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mapCompatEvents(events, map[string]string{taskID: task.DispatchRef}))
+}
+
+func (s *Server) handleCompatListWaves(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	waves, err := s.repo.ListWavesByProject(ctx, projectID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to list compatibility waves")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list waves"})
+		return
+	}
+
+	projectTasks, err := s.repo.ListTasksByProject(ctx, projectID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to list project tasks for waves")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list waves"})
+		return
+	}
+
+	summaries := make([]compatWaveSummary, 0, len(waves))
+	for _, waveRow := range waves {
+		summaries = append(summaries, s.buildCompatWaveSummary(waveRow, projectTasks))
+	}
+
+	s.writeJSON(w, http.StatusOK, summaries)
+}
+
+func (s *Server) handleCompatGetWave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	dispatchRef := chi.URLParam(r, "dispatchRef")
+	waveNum, ok := parseCompatWaveParam(w, r)
+	if !ok {
+		return
+	}
+
+	waveRow, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to get compatibility wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to get wave"})
+		return
+	}
+	if waveRow == nil || normalizeCompatProjectID(waveRow.ProjectID) != normalizeCompatProjectID(projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Wave not found"})
+		return
+	}
+
+	projectTasks, err := s.repo.ListTasksByProjectAndDispatchRef(ctx, projectID, dispatchRef)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("dispatch_ref", dispatchRef).Msg("failed to list wave tasks")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to get wave"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.buildCompatWaveSummary(waveRow, projectTasks))
+}
+
+func (s *Server) handleCompatSealWave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	dispatchRef := chi.URLParam(r, "dispatchRef")
+	waveNum, ok := parseCompatWaveParam(w, r)
+	if !ok {
+		return
+	}
+
+	waveRow, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to load wave for seal")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+	if waveRow == nil || normalizeCompatProjectID(waveRow.ProjectID) != normalizeCompatProjectID(projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Wave not found"})
+		return
+	}
+
+	if err := s.repo.SealWave(ctx, dispatchRef, waveNum); err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to seal compatibility wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+
+	sealedWave, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to reload sealed wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+	projectTasks, err := s.repo.ListTasksByProjectAndDispatchRef(ctx, projectID, dispatchRef)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("dispatch_ref", dispatchRef).Msg("failed to list sealed wave tasks")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.buildCompatWaveSummary(sealedWave, projectTasks))
+}
+
+func (s *Server) handleCompatListProjectEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
+	dispatchRef := strings.TrimSpace(r.URL.Query().Get("dispatch_ref"))
+
+	events, err := s.repo.ListEventsByProject(ctx, projectID, dispatchRef, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("task_id", taskID).Str("dispatch_ref", dispatchRef).Msg("failed to list compatibility project events")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list events"})
+		return
+	}
+
+	tasks, err := s.repo.ListTasksByProject(ctx, projectID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to load project tasks for event mapping")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list events"})
+		return
+	}
+	dispatchByTask := make(map[string]string, len(tasks))
+	for _, taskRow := range tasks {
+		dispatchByTask[taskRow.ID] = taskRow.DispatchRef
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mapCompatEvents(events, dispatchByTask))
 }
 
 func (s *Server) handleCompatCreateSchedulerTask(w http.ResponseWriter, r *http.Request) {

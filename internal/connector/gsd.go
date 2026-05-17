@@ -301,8 +301,77 @@ func (c *GSDConnector) convertPlanToTasks(plan *PlanFile, planPath string) []Tas
 
 // updatePlanningDocuments updates GSD planning documents after task completion.
 func (c *GSDConnector) updatePlanningDocuments(taskID string, artifacts []Artifact) error {
-	// This would update SUMMARY, STATE, ROADMAP, VERIFICATION files
-	// Implementation depends on the specific GSD format
+	note, err := buildPlanningWriteBackNote(taskID, artifacts)
+	if err != nil {
+		return err
+	}
+
+	updated := false
+	err = filepath.Walk(c.planDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		name := strings.ToLower(info.Name())
+		if !strings.HasSuffix(name, "summary.md") &&
+			!strings.HasSuffix(name, "state.md") &&
+			!strings.HasSuffix(name, "roadmap.md") &&
+			!strings.HasSuffix(name, "verification.md") &&
+			!strings.HasSuffix(name, "validation.md") {
+			return nil
+		}
+
+		if err := appendPlanningNote(path, note); err != nil {
+			return err
+		}
+		updated = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return fmt.Errorf("no planning documents found in %s", c.planDir)
+	}
+
+	return nil
+}
+
+func buildPlanningWriteBackNote(taskID string, artifacts []Artifact) (string, error) {
+	var b strings.Builder
+	marker := fmt.Sprintf("<!-- gsd-writeback:%s -->", taskID)
+	b.WriteString(marker)
+	b.WriteString("\n## GSD write-back\n")
+	b.WriteString(fmt.Sprintf("- task_id: %s\n", taskID))
+	b.WriteString(fmt.Sprintf("- updated_at: %s\n", time.Now().UTC().Format(time.RFC3339Nano)))
+	if len(artifacts) > 0 {
+		b.WriteString("- artifacts:\n")
+		for _, artifact := range artifacts {
+			b.WriteString(fmt.Sprintf("  - %s\n", artifact.Path))
+		}
+	}
+	b.WriteString("\n")
+	return b.String(), nil
+}
+
+func appendPlanningNote(path, note string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read planning document: %w", err)
+	}
+	if strings.Contains(string(data), note[:strings.Index(note, "\n")]) {
+		return nil
+	}
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		data = append(data, '\n')
+	}
+	data = append(data, []byte(note)...)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write planning document: %w", err)
+	}
 	return nil
 }
 

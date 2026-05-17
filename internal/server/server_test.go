@@ -129,6 +129,38 @@ func createCompatTask(t *testing.T, repo *store.Repository, taskID string, cardJ
 	}
 }
 
+func waitForMappedCompatTask(t *testing.T, repo *store.Repository, srv *Server, taskID string, deadline time.Time, allowedStatuses ...string) compatSchedulerTask {
+	t.Helper()
+
+	allowed := make(map[string]struct{}, len(allowedStatuses))
+	for _, status := range allowedStatuses {
+		allowed[status] = struct{}{}
+	}
+
+	for time.Now().Before(deadline) {
+		task, err := repo.GetTaskByID(context.Background(), taskID)
+		if err != nil {
+			t.Fatalf("GetTaskByID failed: %v", err)
+		}
+		if task != nil {
+			mapped := srv.mapCompatTask(task)
+			if _, ok := allowed[mapped.Status]; ok && mapped.DispatchStatus == "completed" {
+				return mapped
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	task, err := repo.GetTaskByID(context.Background(), taskID)
+	if err != nil {
+		t.Fatalf("GetTaskByID failed after wait: %v", err)
+	}
+	if task == nil {
+		t.Fatalf("expected task %s to exist after wait", taskID)
+	}
+	return srv.mapCompatTask(task)
+}
+
 func TestServerTaskStatsRecentUsesMappedTaskView(t *testing.T) {
 	srv, repo, cleanup := setupTestServer(t)
 	defer cleanup()
@@ -961,8 +993,8 @@ func TestCompatDispatchExecutesConfiguredTaskAndProducesArtifacts(t *testing.T) 
 		t.Fatalf("expected task to reach verified or review_pending, got %+v", task)
 	}
 
-	mapped := srv.mapCompatTask(task)
-	if (mapped.Status != "verified" && mapped.Status != "review_pending") || mapped.DispatchStatus != "completed" {
+	mapped := waitForMappedCompatTask(t, repo, srv, "GM-REAL-001", time.Now().Add(2*time.Second), "verified", "review_pending")
+	if mapped.Status != "verified" && mapped.Status != "review_pending" {
 		t.Fatalf("expected mapped review/completed state, got %+v", mapped)
 	}
 
@@ -1004,6 +1036,48 @@ func TestMergeQueueAdapterSyncsCompatPayloadOnDone(t *testing.T) {
 	}
 	if payload["dispatch_status"] != "completed" {
 		t.Fatalf("expected compat dispatch_status completed, got %#v", payload["dispatch_status"])
+	}
+}
+
+func TestMergeQueueRepositoryAdapterFiltersVerifiedAndChecksDependencies(t *testing.T) {
+	_, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	createCompatTask(t, repo, "DEP-DONE", `{"id":"DEP-DONE","dispatch_ref":"dispatch_compat","state":"done","transport":"cli","wave":1,"topo_rank":0}`)
+	createCompatTask(t, repo, "MERGE-READY", `{"id":"MERGE-READY","dispatch_ref":"dispatch_compat","state":"verified","transport":"cli","wave":1,"topo_rank":2,"depends_on":["DEP-DONE"]}`)
+	createCompatTask(t, repo, "NOT-VERIFIED", `{"id":"NOT-VERIFIED","dispatch_ref":"dispatch_compat","state":"running","transport":"cli","wave":1,"topo_rank":1}`)
+
+	adapter := NewMergeQueueRepositoryAdapter(repo, "", compatDefaultProjectID)
+	ready, err := adapter.GetVerifiedTasksReadyForMerge(context.Background())
+	if err != nil {
+		t.Fatalf("GetVerifiedTasksReadyForMerge failed: %v", err)
+	}
+	if len(ready) != 1 || ready[0].ID != "MERGE-READY" {
+		t.Fatalf("expected only MERGE-READY in verified set, got %+v", ready)
+	}
+
+	deps, err := adapter.GetTaskDependencies(context.Background(), "MERGE-READY")
+	if err != nil {
+		t.Fatalf("GetTaskDependencies failed: %v", err)
+	}
+	if len(deps) != 1 || deps[0] != "DEP-DONE" {
+		t.Fatalf("unexpected dependencies: %+v", deps)
+	}
+
+	allDone, err := adapter.CheckTasksInState(context.Background(), []string{"DEP-DONE"}, engine.StateDone)
+	if err != nil {
+		t.Fatalf("CheckTasksInState failed: %v", err)
+	}
+	if !allDone {
+		t.Fatal("expected dependency to be considered done")
+	}
+
+	allDone, err = adapter.CheckTasksInState(context.Background(), []string{"NOT-VERIFIED"}, engine.StateDone)
+	if err != nil {
+		t.Fatalf("CheckTasksInState second call failed: %v", err)
+	}
+	if allDone {
+		t.Fatal("expected non-done task to fail state check")
 	}
 }
 
@@ -1050,8 +1124,8 @@ func TestAutoDispatcherDispatchesEligibleAutoTask(t *testing.T) {
 		t.Fatalf("expected task to reach verified or review_pending, got %+v", task)
 	}
 
-	mapped := srv.mapCompatTask(task)
-	if (mapped.Status != "verified" && mapped.Status != "review_pending") || mapped.DispatchStatus != "completed" {
+	mapped := waitForMappedCompatTask(t, repo, srv, "AUTO-001", time.Now().Add(2*time.Second), "verified", "review_pending")
+	if mapped.Status != "verified" && mapped.Status != "review_pending" {
 		t.Fatalf("unexpected mapped task after auto dispatch: %+v", mapped)
 	}
 }
