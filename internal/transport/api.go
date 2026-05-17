@@ -69,7 +69,6 @@ func (t *APITransport) Execute(ctx context.Context, config *TaskConfig) (*Execut
 		}, fmt.Errorf("failed to create workspace: %w", err)
 	}
 
-	// Execute command and capture output
 	var commandOutput string
 	if config.Command != "" {
 		output, exitCode, err := executeCommand(ctx, workspacePath, config.Command, config.Shell, config.Env, config.OutputPath)
@@ -84,52 +83,14 @@ func (t *APITransport) Execute(ctx context.Context, config *TaskConfig) (*Execut
 		}
 	}
 
-	artifacts := []Artifact{}
-	if len(config.FilesToModify) > 0 {
-		for _, relPath := range config.FilesToModify {
-			fullPath := filepath.Join(workspacePath, relPath)
-			info, err := os.Stat(fullPath)
-			if err != nil {
-				continue
-			}
-
-			artifact := Artifact{
-				Path:  relPath,
-				Size:  info.Size(),
-				IsDir: info.IsDir(),
-			}
-			if !info.IsDir() {
-				content, err := os.ReadFile(fullPath)
-				if err != nil {
-					return &ExecutionResult{
-						Success:  false,
-						ExitCode: -1,
-						Error:    fmt.Sprintf("failed to read artifact: %v", err),
-						Output:   commandOutput,
-					}, fmt.Errorf("failed to read artifact: %w", err)
-				}
-				artifact.Content = content
-			}
-			artifacts = append(artifacts, artifact)
-		}
-	}
-
-	if len(config.FilesToModify) > 0 && len(artifacts) == 0 {
+	artifacts, err := collectArtifactsFromWorkspace(workspacePath, config.FilesToModify)
+	if err != nil {
 		return &ExecutionResult{
 			Success:  false,
 			ExitCode: -1,
-			Error:    "empty_artifact_match: no files matched the specified patterns",
+			Error:    err.Error(),
 			Output:   commandOutput,
-		}, fmt.Errorf("empty_artifact_match: no files matched the specified patterns")
-	}
-
-	if err := writeArtifactsToPath(artifacts, config.ArtifactPath); err != nil {
-		return &ExecutionResult{
-			Success:  false,
-			ExitCode: -1,
-			Error:    fmt.Sprintf("failed to write artifacts: %v", err),
-			Output:   commandOutput,
-		}, fmt.Errorf("failed to write artifacts: %w", err)
+		}, err
 	}
 
 	return &ExecutionResult{
@@ -138,4 +99,38 @@ func (t *APITransport) Execute(ctx context.Context, config *TaskConfig) (*Execut
 		Artifacts: artifacts,
 		Output:    commandOutput,
 	}, nil
+}
+
+func collectArtifactsFromWorkspace(workspacePath string, files []string) ([]Artifact, error) {
+	artifacts := []Artifact{}
+	if len(files) == 0 {
+		return artifacts, nil
+	}
+
+	for _, relPath := range files {
+		fullPath := filepath.Join(workspacePath, relPath)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+
+		artifact := Artifact{
+			Path:  relPath,
+			Size:  info.Size(),
+			IsDir: info.IsDir(),
+		}
+		if !info.IsDir() {
+			content, err := os.ReadFile(fullPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read artifact: %w", err)
+			}
+			artifact.Content = content
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("empty_artifact_match: no files matched the specified patterns")
+	}
+	return artifacts, nil
 }

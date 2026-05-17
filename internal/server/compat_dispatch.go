@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/reverse"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
@@ -159,7 +160,7 @@ func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry 
 		return nil, err
 	}
 
-	if executionManager == nil || strings.TrimSpace(command) == "" {
+	if executionManager == nil || (!isReverseCompatTask(payload) && strings.TrimSpace(command) == "") {
 		runtime, _ := payload["execution_runtime"].(string)
 		if runtime == "" {
 			runtime = "unknown"
@@ -303,6 +304,92 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 
 	ownerAgent := readString(payload, "owner_agent")
 
+	if isReverseCompatTask(payload) {
+		runnerType := "reverse"
+		taskType := readString(payload, "type")
+		config, err := s.buildReverseTaskConfig(taskID, payload, executionManager)
+		if err == nil && s.reverseExecutor == nil {
+			err = fmt.Errorf("reverse executor is not configured")
+		}
+		if err == nil {
+			_, err = s.reverseExecutor.Execute(ctx, config)
+		}
+
+		execDuration := time.Since(startTime).Seconds()
+		if err != nil {
+			telemetry.AgentRequestsTotal.WithLabelValues(ownerAgent, runnerType, taskType, "failure").Inc()
+			telemetry.AgentDurationSeconds.WithLabelValues(ownerAgent, runnerType).Observe(execDuration)
+			s.recordAgentCallAsync(context.Background(), &store.AgentCallRecord{
+				ID:           uuid.NewString(),
+				TaskID:       taskID,
+				AgentID:      ownerAgent,
+				RunnerType:   runnerType,
+				TaskType:     taskType,
+				TraceID:      traceID,
+				Status:       "failure",
+				ExitCode:     1,
+				ErrorMessage: err.Error(),
+				DurationMs:   time.Since(startTime).Milliseconds(),
+				StartedAt:    startTime,
+				FinishedAt:   time.Now(),
+			})
+			s.finishReverseExecutionFailure(ctx, taskID, err.Error())
+			return
+		}
+
+		if err := s.validateReverseArtifacts(config); err != nil {
+			telemetry.AgentRequestsTotal.WithLabelValues(ownerAgent, runnerType, taskType, "failure").Inc()
+			telemetry.AgentDurationSeconds.WithLabelValues(ownerAgent, runnerType).Observe(execDuration)
+			s.recordAgentCallAsync(context.Background(), &store.AgentCallRecord{
+				ID:           uuid.NewString(),
+				TaskID:       taskID,
+				AgentID:      ownerAgent,
+				RunnerType:   runnerType,
+				TaskType:     taskType,
+				TraceID:      traceID,
+				Status:       "failure",
+				ExitCode:     1,
+				ErrorMessage: err.Error(),
+				DurationMs:   time.Since(startTime).Milliseconds(),
+				StartedAt:    startTime,
+				FinishedAt:   time.Now(),
+			})
+			s.finishReverseExecutionFailure(ctx, taskID, err.Error())
+			return
+		}
+
+		telemetry.AgentRequestsTotal.WithLabelValues(ownerAgent, runnerType, taskType, "success").Inc()
+		telemetry.AgentDurationSeconds.WithLabelValues(ownerAgent, runnerType).Observe(execDuration)
+		s.recordAgentCallAsync(context.Background(), &store.AgentCallRecord{
+			ID:            uuid.NewString(),
+			TaskID:        taskID,
+			AgentID:       ownerAgent,
+			RunnerType:    runnerType,
+			TaskType:      taskType,
+			TraceID:       traceID,
+			Status:        "success",
+			ExitCode:      0,
+			OutputSummary: "reverse execution completed with 100% match rate",
+			DurationMs:    time.Since(startTime).Milliseconds(),
+			StartedAt:     startTime,
+			FinishedAt:    time.Now(),
+		})
+
+		result := &transport.ExecutionResult{
+			Success:  true,
+			ExitCode: 0,
+			Output:   "reverse execution completed with 100% match rate",
+			Artifacts: []transport.Artifact{
+				{Path: config.FinalArtifactPath},
+				{Path: filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse", "diff_report.json")},
+			},
+		}
+		if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, result); err != nil {
+			s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to mark reverse execution success")
+		}
+		return
+	}
+
 	// Runner path: if a Runner is registered for this agent, use it.
 	// This is the preferred path for migrated agents. The compat fallback below
 	// handles agents not yet in the registry (e.g., during initial migration).
@@ -412,9 +499,49 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 		FinishedAt:    time.Now(),
 	})
 
+	if err := s.syncArtifactsToPlatform(taskID, payload, execResult); err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to sync artifacts to platform directory")
+		s.finishCompatExecutionFailure(ctx, taskID, "workspace_write_failed: "+err.Error())
+		return
+	}
+
 	if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, execResult); err != nil {
 		s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to mark async execution success")
 	}
+}
+
+// syncArtifactsToPlatform writes execution artifacts into the platform-managed artifact directory.
+func (s *Server) syncArtifactsToPlatform(taskID string, payload map[string]interface{}, result *transport.ExecutionResult) error {
+	if result == nil || len(result.Artifacts) == 0 {
+		return nil
+	}
+
+	artifactPath := readString(payload, "artifact_path")
+	if artifactPath == "" {
+		return nil
+	}
+
+	if err := os.MkdirAll(artifactPath, 0755); err != nil {
+		return fmt.Errorf("artifact sync failed: %w", err)
+	}
+
+	for _, artifact := range result.Artifacts {
+		dir := filepath.Join(artifactPath, filepath.Dir(artifact.Path))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("artifact sync failed: %w", err)
+		}
+		fullPath := filepath.Join(artifactPath, artifact.Path)
+		if artifact.IsDir {
+			if err := os.MkdirAll(fullPath, 0755); err != nil {
+				return fmt.Errorf("artifact sync failed: %w", err)
+			}
+			continue
+		}
+		if err := os.WriteFile(fullPath, artifact.Content, 0644); err != nil {
+			return fmt.Errorf("artifact sync failed: %w", err)
+		}
+	}
+	return nil
 }
 
 // runExecutionHeartbeat periodically updates the last_heartbeat_at field during execution.
@@ -684,6 +811,146 @@ func compatContextPayload(payload map[string]interface{}) map[string]interface{}
 		return nil
 	}
 	return contextMap
+}
+
+func isReverseCompatTask(payload map[string]interface{}) bool {
+	return readString(payload, "type") == string(reverse.TaskTypeStaticCRebuild)
+}
+
+func (s *Server) buildReverseTaskConfig(taskID string, payload map[string]interface{}, mgr *compatExecutionManager) (*reverse.ReverseTaskConfig, error) {
+	if mgr == nil {
+		return nil, fmt.Errorf("project execution is not configured")
+	}
+
+	artifactBasePath := filepath.Dir(mgr.artifactPath(taskID))
+	artifactDir := filepath.Join(artifactBasePath, taskID, "reverse")
+	config := &reverse.ReverseTaskConfig{
+		TaskID:              taskID,
+		TaskType:            reverse.TaskType(readString(payload, "type")),
+		TargetSOPath:        readString(payload, "target_so_path"),
+		IDAMCPEndpoint:      readString(payload, "ida_mcp_endpoint"),
+		FridaHookSpec:       readMap(payload, "frida_hook_spec"),
+		OracleInputSpec:     readMap(payload, "oracle_input_spec"),
+		OracleOutputRef:     readString(payload, "oracle_output_ref"),
+		AnalysisStateMDPath: filepath.Join(artifactDir, "analysis_state.md"),
+		FinalArtifactPath:   filepath.Join(artifactDir, "final.c"),
+		ArtifactBasePath:    artifactBasePath,
+		MaxLoopIterations:   readIntDefault(payload, 0, "max_loop_iterations"),
+		LoopReporter:        s,
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+func readMap(payload map[string]interface{}, key string) map[string]interface{} {
+	if payload == nil {
+		return nil
+	}
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return nil
+	}
+	result, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return result
+}
+
+func (s *Server) ReportLoopIteration(ctx context.Context, event reverse.LoopIterationEvent) error {
+	task, err := s.repo.GetTaskByID(ctx, event.TaskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return errCompatTaskNotFound
+	}
+
+	payload := mergeCompatPayload(decodeCompatPayload(task.CardJSON), map[string]interface{}{})
+	payload["loop_iteration_count"] = event.Iteration
+	payload["current_phase"] = event.CurrentPhase
+	payload["last_match_rate"] = event.MatchRate
+	if event.Error != "" {
+		payload["last_error_reason"] = event.Error
+	}
+	if err := s.persistCompatPayload(ctx, event.TaskID, payload); err != nil {
+		return err
+	}
+
+	details, err := json.Marshal(map[string]interface{}{
+		"iteration":     event.Iteration,
+		"current_phase": event.CurrentPhase,
+		"match_rate":    event.MatchRate,
+		"error":         event.Error,
+	})
+	if err != nil {
+		return err
+	}
+
+	return s.repo.CreateEvent(ctx, &store.EventData{
+		EventID:   uuid.NewString(),
+		TaskID:    event.TaskID,
+		EventType: "loop_iteration",
+		FromState: engine.StateRunning,
+		ToState:   engine.StateRunning,
+		Timestamp: time.Now().UTC(),
+		Reason:    event.CurrentPhase,
+		Attempt:   task.RetryCount,
+		Transport: task.Transport,
+		Details:   string(details),
+	})
+}
+
+func (s *Server) validateReverseArtifacts(config *reverse.ReverseTaskConfig) error {
+	if config == nil {
+		return fmt.Errorf("reverse task configuration is required")
+	}
+	if _, err := os.Stat(config.FinalArtifactPath); err != nil {
+		return fmt.Errorf("reverse final artifact validation failed: %w", err)
+	}
+
+	diffReportPath := filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse", "diff_report.json")
+	data, err := os.ReadFile(diffReportPath)
+	if err != nil {
+		return fmt.Errorf("reverse diff report validation failed: %w", err)
+	}
+	var report reverse.DiffReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return fmt.Errorf("reverse diff report is invalid: %w", err)
+	}
+	if report.MatchRate < 100.0 {
+		return fmt.Errorf("reverse match rate is %.2f, expected 100.00", report.MatchRate)
+	}
+	return nil
+}
+
+func (s *Server) finishReverseExecutionFailure(ctx context.Context, taskID, reason string) {
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil || task == nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to load task for reverse execution failure")
+		return
+	}
+
+	payload := mergeCompatPayload(decodeCompatPayload(task.CardJSON), map[string]interface{}{})
+	payload["dispatch_status"] = "failed"
+	payload["status"] = "ready"
+	payload["coordination_stage"] = "retry_waiting"
+	payload["last_dispatch_error"] = reason
+	payload["last_error_reason"] = reason
+	payload["execution_session_id"] = nil
+
+	if task.State == engine.StateRunning {
+		if err := s.transitionCompatTaskState(ctx, task, engine.StateRetryWaiting, compatFailureReason(reason), reason); err != nil {
+			s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to transition reverse task after execution failure")
+			return
+		}
+	}
+	syncCompatPayloadState(payload, engine.StateRetryWaiting)
+	if err := s.persistCompatPayload(ctx, taskID, payload); err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to persist reverse execution failure payload")
+	}
 }
 
 func compatExecutionError(err error, result *transport.ExecutionResult) string {

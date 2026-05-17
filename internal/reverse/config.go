@@ -1,6 +1,7 @@
 package reverse
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,6 +19,18 @@ const (
 	defaultMaxLoopIterations = 50
 )
 
+type LoopReporter interface {
+	ReportLoopIteration(ctx context.Context, event LoopIterationEvent) error
+}
+
+type LoopIterationEvent struct {
+	TaskID       string
+	Iteration    int
+	CurrentPhase string
+	MatchRate    float64
+	Error        string
+}
+
 // ReverseTaskConfig holds configuration for a reverse engineering task.
 type ReverseTaskConfig struct {
 	TaskID              string                 `json:"task_id"`
@@ -31,6 +44,7 @@ type ReverseTaskConfig struct {
 	FinalArtifactPath   string                 `json:"final_artifact_path"`
 	ArtifactBasePath    string                 `json:"artifact_base_path"`
 	MaxLoopIterations   int                    `json:"max_loop_iterations"`
+	LoopReporter        LoopReporter           `json:"-"`
 }
 
 // Validate validates the reverse task configuration.

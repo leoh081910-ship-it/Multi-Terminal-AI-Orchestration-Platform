@@ -212,6 +212,7 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 			})
 			state.CurrentPhase = "ida_failed"
 			SaveAnalysisState(config.AnalysisStateMDPath, state)
+			reportLoopIteration(ctx, config, state, 0, err)
 			return nil, fmt.Errorf("IDA analysis failed: %w", err)
 		}
 
@@ -251,6 +252,7 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 			state.CurrentPhase = "compile_failed"
 			state.LastError = fmt.Sprintf("Compilation failed: %v\nOutput: %s", err, string(compileOutput))
 			SaveAnalysisState(config.AnalysisStateMDPath, state)
+			reportLoopIteration(ctx, config, state, 0, err)
 			continue // Retry loop
 		}
 
@@ -268,6 +270,7 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 			state.CurrentPhase = "static_run_failed"
 			state.LastError = fmt.Sprintf("Static run failed: %v", err)
 			SaveAnalysisState(config.AnalysisStateMDPath, state)
+			reportLoopIteration(ctx, config, state, 0, err)
 			continue // Retry loop
 		}
 
@@ -282,11 +285,16 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 			})
 			// Check if it's an environment issue
 			if !e.FridaClient.IsDeviceAvailable(ctx) {
+				state.CurrentPhase = "frida_device_unavailable"
+				state.LastError = "frida_device_unavailable"
+				SaveAnalysisState(config.AnalysisStateMDPath, state)
+				reportLoopIteration(ctx, config, state, 0, err)
 				return nil, &EnvironmentUnavailableError{Reason: "frida_device_unavailable"}
 			}
 			state.CurrentPhase = "frida_oracle_failed"
 			state.LastError = fmt.Sprintf("Frida hook failed: %v", err)
 			SaveAnalysisState(config.AnalysisStateMDPath, state)
+			reportLoopIteration(ctx, config, state, 0, err)
 			continue // Retry loop
 		}
 
@@ -317,6 +325,7 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 		})
 
 		// Step 7: Check match rate
+		reportLoopIteration(ctx, config, state, diffReport.MatchRate, nil)
 		if diffReport.MatchRate >= 100.0 {
 			// Success! Copy final.c to the final artifact path
 			finalArtifactPath := filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse", "final.c")
@@ -343,6 +352,25 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 		state.CurrentPhase = "refining"
 		SaveAnalysisState(config.AnalysisStateMDPath, state)
 	}
+}
+
+func reportLoopIteration(ctx context.Context, config *ReverseTaskConfig, state *AnalysisState, matchRate float64, loopErr error) {
+	if config == nil || config.LoopReporter == nil || state == nil {
+		return
+	}
+	errorText := ""
+	if loopErr != nil {
+		errorText = loopErr.Error()
+	} else if state.LastError != "" && matchRate < 100.0 {
+		errorText = state.LastError
+	}
+	_ = config.LoopReporter.ReportLoopIteration(ctx, LoopIterationEvent{
+		TaskID:       config.TaskID,
+		Iteration:    state.LoopIterationCount,
+		CurrentPhase: state.CurrentPhase,
+		MatchRate:    matchRate,
+		Error:        errorText,
+	})
 }
 
 // generateCCode generates C code from static analysis and current state.

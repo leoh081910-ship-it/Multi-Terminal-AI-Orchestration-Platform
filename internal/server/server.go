@@ -21,6 +21,7 @@ import (
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/knowledge"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/registry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/reverse"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
@@ -71,6 +72,9 @@ type Server struct {
 
 	// multi-agent runner registry
 	runnerRegistry *registry.RunnerRegistry
+
+	// Phase 3 reverse execution
+	reverseExecutor *reverse.Executor
 }
 
 // New creates a new Server instance.
@@ -233,7 +237,12 @@ func (s *Server) registerCompatProjectRoutes(r chi.Router) {
 		r.Post("/tasks/{id}/retry", s.handleCompatRetrySchedulerTask)
 		r.Get("/tasks/{id}/execution", s.handleCompatGetTaskExecution)
 		r.Get("/tasks/{id}/lineage", s.handleCompatGetTaskLineage)
+		r.Get("/tasks/{id}/events", s.handleCompatListTaskEvents)
 		r.Post("/tasks/{id}/triage", s.handleCompatManualTriage)
+		r.Get("/waves", s.handleCompatListWaves)
+		r.Get("/waves/{dispatchRef}/{wave}", s.handleCompatGetWave)
+		r.Post("/waves/{dispatchRef}/{wave}/seal", s.handleCompatSealWave)
+		r.Get("/events", s.handleCompatListProjectEvents)
 		r.Get("/executions", s.handleCompatListExecutions)
 		r.Get("/runtimes", s.handleCompatListRuntimes)
 		r.Get("/failure-policies", s.handleCompatGetFailurePolicies)
@@ -831,6 +840,16 @@ func (s *Server) SetRunnerRegistry(r *registry.RunnerRegistry) {
 // RunnerRegistry returns the Runner registry if configured.
 func (s *Server) RunnerRegistry() *registry.RunnerRegistry {
 	return s.runnerRegistry
+}
+
+// SetReverseExecutor injects the reverse engineering executor.
+func (s *Server) SetReverseExecutor(executor *reverse.Executor) {
+	s.reverseExecutor = executor
+}
+
+// ReverseExecutor returns the reverse engineering executor if configured.
+func (s *Server) ReverseExecutor() *reverse.Executor {
+	return s.reverseExecutor
 }
 
 // SetCoordinationWorkers sets the coordination background workers.
