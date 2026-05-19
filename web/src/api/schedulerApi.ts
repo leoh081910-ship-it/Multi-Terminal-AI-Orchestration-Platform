@@ -10,12 +10,19 @@ import type {
   FailurePolicyConfig,
   RuntimeSummary,
   ScheduledTask,
+  SchedulerEvent,
+  SchedulerWave,
   SystemHealth,
   SystemWorkersResponse,
   TaskExecution,
   TaskLineage,
   UpdateScheduledTaskInput,
 } from '../types/scheduler';
+
+type SchedulerEventFilters = {
+  taskId?: string;
+  dispatchRef?: string;
+};
 
 interface BackendScheduledTask {
   project_id?: string;
@@ -201,6 +208,43 @@ export const schedulerApi = {
 
   getTaskExecution: async (projectId: string, taskId: string): Promise<TaskExecution> => {
     const response = await client.get<TaskExecution>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/execution`);
+    return response.data;
+  },
+
+  listWaves: async (projectId: string): Promise<SchedulerWave[]> => {
+    const response = await client.get<SchedulerWave[]>(`${projectBase(projectId)}/scheduler/waves`);
+    return response.data;
+  },
+
+  getWave: async (projectId: string, dispatchRef: string, wave: number): Promise<SchedulerWave> => {
+    const response = await client.get<SchedulerWave>(
+      `${projectBase(projectId)}/scheduler/waves/${encodeURIComponent(dispatchRef)}/${wave}`,
+    );
+    return response.data;
+  },
+
+  sealWave: async (projectId: string, dispatchRef: string, wave: number): Promise<SchedulerWave> => {
+    const response = await client.post<SchedulerWave>(
+      `${projectBase(projectId)}/scheduler/waves/${encodeURIComponent(dispatchRef)}/${wave}/seal`,
+    );
+    return response.data;
+  },
+
+  getTaskEvents: async (projectId: string, taskId: string): Promise<SchedulerEvent[]> => {
+    const response = await client.get<SchedulerEvent[]>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/events`);
+    return response.data;
+  },
+
+  getDispatchEvents: async (projectId: string, dispatchRef: string): Promise<SchedulerEvent[]> => {
+    return schedulerApi.getEvents(projectId, { dispatchRef });
+  },
+
+  getEvents: async (projectId: string, filters: SchedulerEventFilters = {}): Promise<SchedulerEvent[]> => {
+    const params: Record<string, string> = {};
+    if (filters.taskId) params.task_id = filters.taskId;
+    if (filters.dispatchRef) params.dispatch_ref = filters.dispatchRef;
+
+    const response = await client.get<SchedulerEvent[]>(`${projectBase(projectId)}/scheduler/events`, { params });
     return response.data;
   },
 

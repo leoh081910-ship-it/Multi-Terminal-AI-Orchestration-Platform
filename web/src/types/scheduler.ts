@@ -257,6 +257,33 @@ export interface SystemWorkersResponse {
   workers: WorkerStatus[];
 }
 
+export interface SchedulerWave {
+  project_id: string;
+  dispatch_ref: string;
+  wave: number;
+  status: 'open' | 'sealed';
+  task_count: number;
+  counts_by_status: Record<string, number>;
+  created_at: string;
+  sealed_at?: string;
+}
+
+export interface SchedulerEvent {
+  event_id: string;
+  project_id: string;
+  task_id: string;
+  dispatch_ref?: string;
+  event_type: string;
+  from_state?: string;
+  to_state?: string;
+  timestamp: string;
+  reason?: string;
+  attempt: number;
+  transport?: string;
+  runner_id?: string;
+  details?: string;
+}
+
 export interface AgentCallRecord {
   id: string;
   task_id: string;
