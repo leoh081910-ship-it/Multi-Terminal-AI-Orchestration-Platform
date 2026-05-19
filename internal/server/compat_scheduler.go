@@ -42,6 +42,9 @@ var compatTaskStatuses = []string{
 type compatSchedulerTask struct {
 	ProjectID           string    `json:"project_id,omitempty"`
 	TaskID              string    `json:"task_id"`
+	DispatchRef         string    `json:"dispatch_ref,omitempty"`
+	Wave                int       `json:"wave"`
+	TopoRank            int       `json:"topo_rank"`
 	Title               string    `json:"title"`
 	OwnerAgent          string    `json:"owner_agent"`
 	Status              string    `json:"status"`
@@ -264,6 +267,25 @@ func (s *Server) handleCompatListSchedulerTasks(w http.ResponseWriter, r *http.R
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+func (s *Server) handleCompatGetSchedulerTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	projectID := s.compatProjectIDFromRequest(r)
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to load compatibility scheduler task")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load scheduler task"})
+		return
+	}
+	if task == nil || !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mapCompatTask(task))
 }
 
 func (s *Server) handleCompatListTaskEvents(w http.ResponseWriter, r *http.Request) {
@@ -876,6 +898,9 @@ func (s *Server) mapCompatTask(task *ent.Task) compatSchedulerTask {
 	return compatSchedulerTask{
 		ProjectID:           projectID,
 		TaskID:              view.ID,
+		DispatchRef:         view.DispatchRef,
+		Wave:                view.Wave,
+		TopoRank:            view.TopoRank,
 		Title:               title,
 		OwnerAgent:          ownerAgent,
 		Status:              status,

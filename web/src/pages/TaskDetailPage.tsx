@@ -5,7 +5,7 @@ import { schedulerApi } from '../api/schedulerApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import LogViewer from '../components/LogViewer';
 import { useProject } from '../hooks/useProject';
-import type { AgentCallRecord, ScheduledTask, TaskLineage } from '../types/scheduler';
+import type { AgentCallRecord, ScheduledTask, SchedulerEvent, TaskLineage } from '../types/scheduler';
 import '../types/scheduler';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -34,25 +34,38 @@ export default function TaskDetailPage() {
   const { projectId } = useProject();
   const { lastMessage } = useWebSocket(projectId);
 
-  const [activeTab, setActiveTab] = useState<'details' | 'lineage' | 'logs' | 'agent-calls'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'events' | 'lineage' | 'logs' | 'agent-calls'>('details');
 
   const { data: taskData = null, isLoading, error } = useQuery({
     queryKey: ['task', projectId, taskId],
-    queryFn: async () => {
-      await schedulerApi.getTaskExecution(projectId, taskId!);
-      const tasks = await schedulerApi.getTasks(projectId);
-      return tasks.find(t => t.id === taskId) || null;
-    },
+    queryFn: () => schedulerApi.getTask(projectId, taskId!),
     enabled: !!taskId && !!projectId,
   });
 
   // Real-time updates via WebSocket
   useEffect(() => {
     if (!lastMessage || !taskId) return;
-    if (lastMessage.task_id === taskId || lastMessage.type === 'task.state_changed') {
-      qc.invalidateQueries({ queryKey: ['task', projectId, taskId] });
-    }
+    if (lastMessage.project_id && lastMessage.project_id !== projectId) return;
+    const affectsTask = lastMessage.task_id === taskId || lastMessage.type === 'task.state_changed';
+    if (!affectsTask) return;
+    qc.invalidateQueries({ queryKey: ['task', projectId, taskId] });
+    qc.invalidateQueries({ queryKey: ['task-events', projectId, taskId] });
+    qc.invalidateQueries({ queryKey: ['task-execution', projectId, taskId] });
+    qc.invalidateQueries({ queryKey: ['lineage', projectId, taskId] });
+    qc.invalidateQueries({ queryKey: ['agent-calls', taskId] });
   }, [lastMessage, taskId, projectId, qc]);
+
+  const { data: events } = useQuery({
+    queryKey: ['task-events', projectId, taskId],
+    queryFn: () => schedulerApi.getTaskEvents(projectId, taskId!),
+    enabled: !!taskId && !!projectId && activeTab === 'events',
+  });
+
+  const { data: execution } = useQuery({
+    queryKey: ['task-execution', projectId, taskId],
+    queryFn: () => schedulerApi.getTaskExecution(projectId, taskId!),
+    enabled: !!taskId && !!projectId && activeTab === 'logs',
+  });
 
   const { data: lineage } = useQuery({
     queryKey: ['lineage', projectId, taskId],
@@ -167,7 +180,7 @@ export default function TaskDetailPage() {
       {/* Tabs */}
       <div className="border-b border-gray-700">
         <div className="flex gap-6">
-          {(['details', 'lineage', 'logs', 'agent-calls'] as const).map(tab => (
+          {(['details', 'events', 'lineage', 'logs', 'agent-calls'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -185,8 +198,12 @@ export default function TaskDetailPage() {
 
       {/* Tab Content */}
       {activeTab === 'details' && <DetailsTab task={t} />}
+      {activeTab === 'events' && <EventsTab events={events} />}
       {activeTab === 'logs' && (
-        <LogViewer projectId={projectId} taskId={taskId} maxLines={500} height="500px" />
+        <div className="space-y-4">
+          <ExecutionSummary execution={execution} />
+          <LogViewer projectId={projectId} taskId={taskId} maxLines={500} height="500px" />
+        </div>
       )}
       {activeTab === 'lineage' && <LineageTab lineage={lineage} />}
       {activeTab === 'agent-calls' && <AgentCallsTab calls={agentCalls} />}
@@ -196,6 +213,9 @@ export default function TaskDetailPage() {
 
 function DetailsTab({ task }: { task: ScheduledTask }) {
   const fields: Array<{ label: string; value: string | undefined }> = [
+    { label: 'Dispatch Ref', value: task.dispatch_ref },
+    { label: 'Wave', value: task.wave != null ? String(task.wave) : undefined },
+    { label: 'Topo Rank', value: task.topo_rank != null ? String(task.topo_rank) : undefined },
     { label: 'Dispatch Mode', value: task.dispatch_mode },
     { label: 'Auto Dispatch', value: task.auto_dispatch_enabled ? 'Yes' : 'No' },
     { label: 'Dispatch Status', value: task.dispatch_status },
@@ -232,6 +252,17 @@ function DetailsTab({ task }: { task: ScheduledTask }) {
         </div>
       )}
 
+      {task.input_artifacts && task.input_artifacts.length > 0 && (
+        <div className="col-span-2 bg-gray-800 rounded-lg p-3">
+          <span className="text-xs text-gray-500">Input Artifacts</span>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {task.input_artifacts.map(a => (
+              <span key={a} className="px-2 py-0.5 bg-blue-900/50 rounded text-xs text-blue-300">{a}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {task.output_artifacts && task.output_artifacts.length > 0 && (
         <div className="col-span-2 bg-gray-800 rounded-lg p-3">
           <span className="text-xs text-gray-500">Output Artifacts</span>
@@ -260,6 +291,56 @@ function DetailsTab({ task }: { task: ScheduledTask }) {
 }
 
 // ExecutionTab intentionally removed (unused)
+
+function EventsTab({ events }: { events?: SchedulerEvent[] }) {
+  if (!events) return <p className="text-gray-500 text-sm">Loading events...</p>;
+  if (events.length === 0) return <p className="text-gray-500 text-sm">No status history or events for this task.</p>;
+
+  return (
+    <div className="space-y-2">
+      {events.map(event => (
+        <div key={event.event_id} className="bg-gray-800 rounded-lg p-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-900/60 text-blue-300">{event.event_type}</span>
+              {event.from_state && event.to_state && <span className="text-sm text-gray-300">{event.from_state} → {event.to_state}</span>}
+            </div>
+            <span className="text-xs text-gray-500">{new Date(event.timestamp).toLocaleString()}</span>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+            {event.dispatch_ref && <span>dispatch_ref: {event.dispatch_ref}</span>}
+            {event.runner_id && <span>runner: {event.runner_id}</span>}
+            {event.transport && <span>transport: {event.transport}</span>}
+            <span>attempt: {event.attempt}</span>
+          </div>
+          {event.reason && <p className="text-sm text-gray-300">{event.reason}</p>}
+          {event.details && <p className="text-sm text-gray-400 whitespace-pre-wrap">{event.details}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExecutionSummary({ execution }: { execution?: Awaited<ReturnType<typeof schedulerApi.getTaskExecution>> }) {
+  if (execution === undefined) return <p className="text-gray-500 text-sm">Loading execution...</p>;
+  if (execution === null) return <p className="text-gray-500 text-sm">No execution log has been recorded for this task.</p>;
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-gray-200">Execution {execution.execution_id}</span>
+        <span className="text-xs text-gray-500">{execution.status}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+        <span>Runtime: {execution.runtime}</span>
+        <span>Session: {execution.session_id}</span>
+        {execution.workspace && <span>Workspace: {execution.workspace}</span>}
+        {execution.artifacts && <span>Artifacts: {execution.artifacts}</span>}
+      </div>
+      {execution.output_tail && <pre className="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 rounded p-3 max-h-48 overflow-auto">{execution.output_tail}</pre>}
+    </div>
+  );
+}
 
 function LineageTab({ lineage }: { lineage?: TaskLineage }) {
   if (!lineage) return <p className="text-gray-500 text-sm">Loading lineage...</p>;

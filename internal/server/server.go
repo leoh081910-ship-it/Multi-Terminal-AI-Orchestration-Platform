@@ -232,6 +232,7 @@ func (s *Server) registerCompatProjectRoutes(r chi.Router) {
 		r.Get("/tasks", s.handleCompatListSchedulerTasks)
 		r.Post("/tasks", s.handleCompatCreateSchedulerTask)
 		r.Post("/tasks/bulk", s.handleCompatBulkCreateSchedulerTasks)
+		r.Get("/tasks/{id}", s.handleCompatGetSchedulerTask)
 		r.Patch("/tasks/{id}", s.handleCompatUpdateSchedulerTask)
 		r.Post("/tasks/{id}/dispatch", s.handleCompatDispatchSchedulerTask)
 		r.Post("/tasks/{id}/retry", s.handleCompatRetrySchedulerTask)
