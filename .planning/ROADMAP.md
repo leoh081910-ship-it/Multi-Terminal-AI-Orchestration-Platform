@@ -111,7 +111,7 @@
 **Plans:** 3 plans
 - [x] 05-interface-01-PLAN.md — Formal route/nav/home IA consolidation ✓
 - [x] 05-interface-02-PLAN.md — Wave management and event log UI ✓
-- [ ] 05-interface-03-PLAN.md — Task list/detail/form and realtime refresh closure
+- [x] 05-interface-03-PLAN.md — Task list/detail/form and realtime refresh closure
 **UI hint**: yes
 
 ---

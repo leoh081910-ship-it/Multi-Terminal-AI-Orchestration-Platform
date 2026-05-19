@@ -109,17 +109,17 @@
 ### HTTP API（HTTP 接口）
 
 - [x] **API-01**: RESTful API 暴露任务 CRUD、Wave 操作、状态查询、事件查询
-- [ ] **API-02**: API 支持手动创建/编辑 Task Card（非 Connector 来源）
-- [ ] **API-03**: WebSocket 端点推送实时任务状态变更
+- [x] **API-02**: API 支持手动创建/编辑 Task Card（非 Connector 来源）
+- [x] **API-03**: WebSocket 端点推送实时任务状态变更
 
 ### Web UI（Web 界面）
 
-- [ ] **UI-01**: 任务列表页，支持按状态/wave/dispatch_ref 筛选和排序
-- [ ] **UI-02**: 任务详情页，展示 Task Card 完整字段、状态历史、事件日志
+- [x] **UI-01**: 任务列表页，支持按状态/wave/dispatch_ref 筛选和排序
+- [x] **UI-02**: 任务详情页，展示 Task Card 完整字段、状态历史、事件日志
 - [x] **UI-03**: Wave 管理页面，展示各 wave 状态（open/sealed）、支持 seal 操作
-- [ ] **UI-04**: 任务创建/编辑表单，校验字段格式约束
+- [x] **UI-04**: 任务创建/编辑表单，校验字段格式约束
 - [ ] **UI-05**: 全局状态仪表盘，展示任务统计（各状态计数）、活跃 dispatch_ref、合并队列状态
-- [ ] **UI-06**: 实时状态更新，任务状态变更通过 WebSocket 推送到前端
+- [x] **UI-06**: 实时状态更新，任务状态变更通过 WebSocket 推送到前端
 - [x] **UI-07**: 事件日志浏览器，按任务或 dispatch_ref 筛选查看完整事件链
 
 ## v2 Requirements
