@@ -27,6 +27,9 @@ type SchedulerEventFilters = {
 interface BackendScheduledTask {
   project_id?: string;
   task_id: string;
+  dispatch_ref?: string;
+  wave?: number;
+  topo_rank?: number;
   title: string;
   owner_agent: ScheduledTask['owner_agent'];
   status: ScheduledTask['status'];
@@ -96,9 +99,19 @@ interface ExecutionResponse {
   executions: TaskExecution[];
 }
 
+interface SchedulerTaskListResponse {
+  items: BackendScheduledTask[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 const mapTask = (task: BackendScheduledTask): ScheduledTask => ({
   project_id: task.project_id,
   id: task.task_id,
+  dispatch_ref: task.dispatch_ref,
+  wave: task.wave,
+  topo_rank: task.topo_rank,
   title: task.title,
   owner_agent: task.owner_agent,
   status: task.status,
@@ -152,8 +165,14 @@ const projectBase = (projectId: string) => `/projects/${encodeURIComponent(proje
 
 export const schedulerApi = {
   getTasks: async (projectId: string): Promise<ScheduledTask[]> => {
-    const response = await client.get<BackendScheduledTask[]>(`${projectBase(projectId)}/scheduler/tasks`);
-    return response.data.map(mapTask);
+    const response = await client.get<SchedulerTaskListResponse | BackendScheduledTask[]>(`${projectBase(projectId)}/scheduler/tasks`);
+    const tasks = Array.isArray(response.data) ? response.data : response.data.items;
+    return tasks.map(mapTask);
+  },
+
+  getTask: async (projectId: string, taskId: string): Promise<ScheduledTask> => {
+    const response = await client.get<BackendScheduledTask>(`${projectBase(projectId)}/scheduler/tasks/${taskId}`);
+    return mapTask(response.data);
   },
 
   createTask: async (projectId: string, payload: CreateScheduledTaskInput): Promise<ScheduledTask> => {
@@ -206,9 +225,17 @@ export const schedulerApi = {
     return mapTask(response.data);
   },
 
-  getTaskExecution: async (projectId: string, taskId: string): Promise<TaskExecution> => {
-    const response = await client.get<TaskExecution>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/execution`);
-    return response.data;
+  getTaskExecution: async (projectId: string, taskId: string): Promise<TaskExecution | null> => {
+    try {
+      const response = await client.get<TaskExecution>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/execution`);
+      return response.data;
+    } catch (error: unknown) {
+      const status = typeof error === 'object' && error !== null && 'response' in error
+        ? (error as { response?: { status?: number } }).response?.status
+        : undefined;
+      if (status === 404) return null;
+      throw error;
+    }
   },
 
   listWaves: async (projectId: string): Promise<SchedulerWave[]> => {

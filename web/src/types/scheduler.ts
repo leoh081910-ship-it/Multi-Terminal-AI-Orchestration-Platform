@@ -65,6 +65,9 @@ export type TaskType = string;
 export interface ScheduledTask {
   project_id?: string;
   id: string;
+  dispatch_ref?: string;
+  wave?: number;
+  topo_rank?: number;
   title: string;
   owner_agent: Agent;
   status: TaskStatus;
@@ -115,6 +118,8 @@ export interface ScheduledTask {
 
 export interface CreateScheduledTaskInput {
   title: string;
+  dispatch_ref?: string;
+  wave?: number;
   owner_agent: Agent;
   status?: TaskStatus;
   type?: string;
@@ -131,6 +136,10 @@ export interface CreateScheduledTaskInput {
 }
 
 export interface UpdateScheduledTaskInput {
+  title?: string;
+  dispatch_ref?: string;
+  wave?: number;
+  type?: string;
   owner_agent?: Agent;
   status?: TaskStatus;
   priority?: number;
