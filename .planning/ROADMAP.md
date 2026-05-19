@@ -108,7 +108,10 @@
   7. Web UI provides real-time updates via WebSocket
   8. Reverse validation tasks correctly check algorithm correctness from `artifacts/{task_id}/reverse/`
   9. Reverse validation ensures `match_rate = 100%` before allowing state progression
-**Plans**: TBD
+**Plans:** 3 plans
+- [x] 05-interface-01-PLAN.md — Formal route/nav/home IA consolidation ✓
+- [x] 05-interface-02-PLAN.md — Wave management and event log UI ✓
+- [ ] 05-interface-03-PLAN.md — Task list/detail/form and realtime refresh closure
 **UI hint**: yes
 
 ---
@@ -121,7 +124,7 @@
 | 2. Core Engine | — | ✓ Complete | 2026-04-09 |
 | 3. Execution Layer | — | ✓ Complete | 2026-04-10 |
 | 4. Integration | — | ✓ Complete | 2026-04-11 |
-| 5. Interface | — | ✓ Complete | 2026-04-11 |
+| 5. Interface | 2/3 | In Progress | 2026-05-19 |
 
 ---
 

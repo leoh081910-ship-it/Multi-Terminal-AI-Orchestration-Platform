@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-16T02:23:27.439Z"
+last_updated: "2026-05-19T09:54:36Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # v3 Phase 1 & Phase 2 Progress (2026-05-06)
@@ -48,6 +48,15 @@ go test ./internal/runner/...         ✅ 8/8 tests PASS
 go test ./internal/transport/...      ✅ PASS
 ```
 
+### Phase 05 Plan 02 Completion (2026-05-19)
+
+- Completed `05-interface-02`: Wave management and event log UI backed by formal project-scoped scheduler APIs.
+- Added regression coverage for project-scoped Wave list/detail/seal behavior and event filtering.
+- Frontend `/waves` now lists waves, shows detail/count/status data, and supports seal actions.
+- Frontend `/events` now supports task/dispatch filters, historical event queries, and WebSocket append.
+- Validation passed: `go test ./internal/server ./internal/store -count=1` and `npm --prefix "E:/04-Claude/Projects/多终端 AI 编排平台/web" run build`.
+- Task commits: `c0bcf4e`, `8c4f703`, `1f44cb1`.
+
 ## Phase 2 进展
 
 **✅ `runCompatExecution` Runner 集成**:
@@ -86,8 +95,8 @@ go test ./internal/transport/...      ✅ PASS
 ## Current Position
 
 Phase: 05 (interface) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 05
+Plan: 3 of 3
+Status: Completed Phase 05 Plan 02; ready for Phase 05 Plan 03
 
 所有 PR 已完成并修复 review findings：
 
