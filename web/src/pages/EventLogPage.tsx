@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Activity, AlertTriangle, Radio, RefreshCw } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
@@ -39,6 +39,7 @@ const formatTime = (value: string) => new Date(value).toLocaleString();
 
 const EventLogPage: React.FC = () => {
   const { projectId } = useProject();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [taskFilter, setTaskFilter] = useState(searchParams.get('task_id') ?? '');
   const [dispatchFilter, setDispatchFilter] = useState(searchParams.get('dispatch_ref') ?? '');
@@ -59,7 +60,7 @@ const EventLogPage: React.FC = () => {
     queryKey: ['scheduler-events', projectId, filters.taskId ?? '', filters.dispatchRef ?? ''],
     queryFn: () => schedulerApi.getEvents(projectId, filters),
     enabled: !!projectId,
-    refetchInterval: 15_000,
+    refetchInterval: connected ? false : 15_000,
   });
 
   useEffect(() => {
@@ -72,11 +73,17 @@ const EventLogPage: React.FC = () => {
     if (filters.taskId && event.task_id !== filters.taskId) return;
     if (filters.dispatchRef && event.dispatch_ref !== filters.dispatchRef) return;
 
+    queryClient.invalidateQueries({ queryKey: ['scheduler-events', projectId] });
+    if (event.task_id) {
+      queryClient.invalidateQueries({ queryKey: ['task-events', projectId, event.task_id] });
+      queryClient.invalidateQueries({ queryKey: ['task', projectId, event.task_id] });
+    }
+
     setRealtimeEvents((current) => {
       if (current.some((item) => item.event_id === event.event_id)) return current;
       return [event, ...current].slice(0, 200);
     });
-  }, [filters.dispatchRef, filters.taskId, lastMessage, projectId]);
+  }, [filters.dispatchRef, filters.taskId, lastMessage, projectId, queryClient]);
 
   const events = useMemo(() => {
     const merged = new Map<string, SchedulerEvent>();
