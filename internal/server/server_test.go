@@ -877,6 +877,141 @@ func TestCompatSchedulerProjectScopedRoutesFilterTasks(t *testing.T) {
 	}
 }
 
+func TestCompatSchedulerProjectScopedWaveRoutesUseProjectAndWaveParams(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "alpha",
+		Projects: []CompatProjectConfig{
+			{ID: "alpha", Name: "Alpha", MainRepoPath: t.TempDir()},
+			{ID: "beta", Name: "Beta", MainRepoPath: t.TempDir()},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	createCompatTask(t, repo, "ALPHA-W2-001", `{"id":"ALPHA-W2-001","project_id":"alpha","dispatch_ref":"alpha-dispatch","state":"queued","transport":"cli","wave":2,"topo_rank":1,"title":"Alpha wave two"}`)
+	createCompatTask(t, repo, "ALPHA-W2-002", `{"id":"ALPHA-W2-002","project_id":"alpha","dispatch_ref":"alpha-dispatch","state":"running","transport":"cli","wave":2,"topo_rank":2,"title":"Alpha wave two running"}`)
+	createCompatTask(t, repo, "ALPHA-W1-001", `{"id":"ALPHA-W1-001","project_id":"alpha","dispatch_ref":"alpha-dispatch","state":"queued","transport":"cli","wave":1,"topo_rank":1,"title":"Alpha wave one"}`)
+	createCompatTask(t, repo, "BETA-W2-001", `{"id":"BETA-W2-001","project_id":"beta","dispatch_ref":"beta-dispatch","state":"queued","transport":"cli","wave":2,"topo_rank":1,"title":"Beta wave two"}`)
+	if err := repo.UpsertWave(context.Background(), "alpha-dispatch", 2); err != nil {
+		t.Fatalf("UpsertWave alpha failed: %v", err)
+	}
+	if err := repo.UpsertWave(context.Background(), "beta-dispatch", 2); err != nil {
+		t.Fatalf("UpsertWave beta failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/alpha/scheduler/waves", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+
+	var waves []compatWaveSummary
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&waves); err != nil {
+		t.Fatalf("failed to decode waves response: %v", err)
+	}
+	if len(waves) != 1 {
+		t.Fatalf("expected one alpha wave, got %+v", waves)
+	}
+	if waves[0].ProjectID != "alpha" || waves[0].DispatchRef != "alpha-dispatch" || waves[0].Wave != 2 || waves[0].TaskCount != 2 {
+		t.Fatalf("expected alpha wave 2 summary, got %+v", waves[0])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/alpha/scheduler/waves/alpha-dispatch/2", nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected wave detail status %d, got %d with body %s", http.StatusOK, res.Code, res.Body.String())
+	}
+
+	var detail compatWaveSummary
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode wave detail response: %v", err)
+	}
+	if detail.Wave != 2 || detail.TaskCount != 2 || detail.CountsByStatus[engine.StateRunning] != 1 {
+		t.Fatalf("expected wave 2 detail with running count, got %+v", detail)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/projects/alpha/scheduler/waves/alpha-dispatch/2/seal", nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected seal status %d, got %d with body %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode sealed wave response: %v", err)
+	}
+	if detail.Status != "sealed" || detail.SealedAt == nil {
+		t.Fatalf("expected sealed wave to include sealed_at, got %+v", detail)
+	}
+}
+
+func TestCompatSchedulerProjectEventsFilterByDispatchAndTask(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "alpha",
+		Projects: []CompatProjectConfig{
+			{ID: "alpha", Name: "Alpha", MainRepoPath: t.TempDir()},
+			{ID: "beta", Name: "Beta", MainRepoPath: t.TempDir()},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	ctx := context.Background()
+	createCompatTask(t, repo, "ALPHA-EVT-001", `{"id":"ALPHA-EVT-001","project_id":"alpha","dispatch_ref":"shared-dispatch","state":"queued","transport":"cli","wave":1,"topo_rank":1}`)
+	createCompatTask(t, repo, "ALPHA-EVT-002", `{"id":"ALPHA-EVT-002","project_id":"alpha","dispatch_ref":"other-dispatch","state":"queued","transport":"cli","wave":1,"topo_rank":2}`)
+	createCompatTask(t, repo, "BETA-EVT-001", `{"id":"BETA-EVT-001","project_id":"beta","dispatch_ref":"shared-dispatch","state":"queued","transport":"cli","wave":1,"topo_rank":1}`)
+
+	if err := repo.UpdateTaskState(ctx, "ALPHA-EVT-001", engine.StateQueued, engine.StateRunning, "dispatch", &store.EventData{EventID: "evt-alpha-shared", EventType: "state_transition"}); err != nil {
+		t.Fatalf("UpdateTaskState alpha shared failed: %v", err)
+	}
+	if err := repo.UpdateTaskState(ctx, "ALPHA-EVT-002", engine.StateQueued, engine.StateRunning, "dispatch", &store.EventData{EventID: "evt-alpha-other", EventType: "state_transition"}); err != nil {
+		t.Fatalf("UpdateTaskState alpha other failed: %v", err)
+	}
+	if err := repo.UpdateTaskState(ctx, "BETA-EVT-001", engine.StateQueued, engine.StateRunning, "dispatch", &store.EventData{EventID: "evt-beta-shared", EventType: "state_transition"}); err != nil {
+		t.Fatalf("UpdateTaskState beta shared failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/alpha/scheduler/events?dispatch_ref=shared-dispatch", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+
+	var events []compatEventRecord
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&events); err != nil {
+		t.Fatalf("failed to decode events response: %v", err)
+	}
+	if len(events) != 1 || events[0].TaskID != "ALPHA-EVT-001" || events[0].DispatchRef != "shared-dispatch" || events[0].ProjectID != "alpha" {
+		t.Fatalf("expected only alpha shared-dispatch event, got %+v", events)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/alpha/scheduler/events?task_id=ALPHA-EVT-002", nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected task filter status %d, got %d", http.StatusOK, res.Code)
+	}
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&events); err != nil {
+		t.Fatalf("failed to decode task events response: %v", err)
+	}
+	if len(events) != 1 || events[0].TaskID != "ALPHA-EVT-002" || events[0].DispatchRef != "other-dispatch" {
+		t.Fatalf("expected only ALPHA-EVT-002 event, got %+v", events)
+	}
+}
+
 func TestCompatSchedulerWriteEndpointsUpdateAndDispatchTask(t *testing.T) {
 	srv, repo, cleanup := setupTestServer(t)
 	defer cleanup()

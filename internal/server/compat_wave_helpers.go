@@ -33,25 +33,43 @@ func (s *Server) mapCompatEvents(events []*ent.Event, dispatchByTask map[string]
 func (s *Server) buildCompatWaveSummary(waveRow *ent.Wave, tasks []*ent.Task) compatWaveSummary {
 	counts := make(map[string]int)
 	for _, t := range tasks {
+		if t.DispatchRef != waveRow.DispatchRef || t.Wave != waveRow.Wave {
+			continue
+		}
 		counts[t.State]++
 	}
 	status := "open"
 	if !waveRow.SealedAt.IsZero() {
 		status = "sealed"
 	}
-	return compatWaveSummary{
+	summary := compatWaveSummary{
 		ProjectID:      waveRow.ProjectID,
 		DispatchRef:    waveRow.DispatchRef,
 		Wave:           waveRow.Wave,
 		Status:         status,
-		TaskCount:      len(tasks),
+		TaskCount:      sumCompatWaveCounts(counts),
 		CountsByStatus: counts,
 		CreatedAt:      waveRow.CreatedAt,
 	}
+	if !waveRow.SealedAt.IsZero() {
+		summary.SealedAt = &waveRow.SealedAt
+	}
+	return summary
+}
+
+func sumCompatWaveCounts(counts map[string]int) int {
+	total := 0
+	for _, count := range counts {
+		total += count
+	}
+	return total
 }
 
 func parseCompatWaveParam(w http.ResponseWriter, r *http.Request) (int, bool) {
-	raw := chi.URLParam(r, "waveNum")
+	raw := chi.URLParam(r, "wave")
+	if raw == "" {
+		raw = chi.URLParam(r, "waveNum")
+	}
 	if raw == "" {
 		raw = r.URL.Query().Get("wave")
 	}
