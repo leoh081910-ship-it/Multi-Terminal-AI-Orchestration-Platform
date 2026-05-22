@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, CircleDashed, Clock, Filter, Import, Info, Play, Plus, Radar, RefreshCcw, RotateCcw, Tag, Terminal, User, X, GitBranch, Activity, Zap } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
@@ -101,7 +101,7 @@ const SchedulerBoard: React.FC = () => {
   const { data: systemWorkers } = useQuery({ queryKey: ['system-workers'], queryFn: () => schedulerApi.getSystemWorkers(), refetchInterval: 15000 });
   const { data: selectedExecution } = useQuery({ queryKey: ['task-execution', projectId, activeSelectedTask?.id], queryFn: () => schedulerApi.getTaskExecution(projectId, activeSelectedTask!.id), enabled: Boolean(projectId && activeSelectedTask?.id), refetchInterval: connected ? false : 10000 });
   const { data: selectedLineage } = useQuery({ queryKey: ['task-lineage', projectId, activeSelectedTask?.id], queryFn: () => schedulerApi.getTaskLineage(projectId, activeSelectedTask!.id), enabled: Boolean(projectId && activeSelectedTask?.id), refetchInterval: connected ? false : 15000 });
-  const invalidateProjectQueries = () => { queryClient.invalidateQueries({ queryKey: ['scheduled-tasks', projectId] }); queryClient.invalidateQueries({ queryKey: ['scheduler-stats', projectId] }); };
+  const invalidateProjectQueries = useCallback(() => { queryClient.invalidateQueries({ queryKey: ['scheduled-tasks', projectId] }); queryClient.invalidateQueries({ queryKey: ['scheduler-stats', projectId] }); }, [projectId, queryClient]);
   useEffect(() => {
     if (!lastMessage || (lastMessage.project_id && lastMessage.project_id !== projectId)) return;
     if (lastMessage.type.startsWith('task.') || lastMessage.type.startsWith('scheduler.')) {
@@ -111,7 +111,7 @@ const SchedulerBoard: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ['task-lineage', projectId, lastMessage.task_id] });
       }
     }
-  }, [lastMessage, projectId, queryClient]);
+  }, [invalidateProjectQueries, lastMessage, projectId, queryClient]);
   const createTaskMutation = useMutation({ mutationFn: (payload: CreateScheduledTaskInput) => schedulerApi.createTask(projectId, payload), onSuccess: () => { setForm(createDefaultForm()); setFormError(null); invalidateProjectQueries(); } });
   const bulkImportMutation = useMutation({ mutationFn: (drafts: ValidBulkDraft[]) => schedulerApi.createTasksBulk(projectId, drafts), onSuccess: (result) => { const summaryParts: string[] = []; if (result.created.length) summaryParts.push(`已创建 ${result.created.length} 个任务`); if (result.failed.length) summaryParts.push(`${result.failed.length} 个任务创建失败`); setBulkSummary(summaryParts.length ? summaryParts.join(' ｜ ') : '没有创建任何任务'); setBulkErrorLines(result.failed); if (!result.failed.length) setBulkInput(''); invalidateProjectQueries(); } });
   const updateTaskMutation = useMutation({ mutationFn: ({ taskId, payload }: { taskId: string; payload: UpdateScheduledTaskInput }) => schedulerApi.updateTask(projectId, taskId, payload), onSuccess: (updatedTask) => { setSelectedTask(updatedTask); invalidateProjectQueries(); } });

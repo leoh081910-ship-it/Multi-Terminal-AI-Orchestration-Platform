@@ -111,7 +111,7 @@
 **Plans:** 3 plans
 - [x] 05-interface-01-PLAN.md — Formal route/nav/home IA consolidation ✓
 - [x] 05-interface-02-PLAN.md — Wave management and event log UI ✓
-- [x] 05-interface-03-PLAN.md — Task list/detail/form and realtime refresh closure
+- [x] 05-interface-03-PLAN.md — Task list/detail/form and realtime refresh closure ✓
 **UI hint**: yes
 
 ---
@@ -124,7 +124,7 @@
 | 2. Core Engine | — | ✓ Complete | 2026-04-09 |
 | 3. Execution Layer | — | ✓ Complete | 2026-04-10 |
 | 4. Integration | — | ✓ Complete | 2026-04-11 |
-| 5. Interface | 2/3 | In Progress | 2026-05-19 |
+| 5. Interface | 3/3 | ✓ Complete | 2026-05-19 |
 
 ---
 
@@ -178,7 +178,7 @@
 |-------|------|------|------|
 | v3-P1 | Runner 接口 + CLIRunner 适配 | Week 1-2 | 📋 规划中 |
 | v3-P2 | Agent Registry + 动态注册 | Week 3-4 | 📋 规划中 |
-| v3-P3 | HTTPRunner + MCPRunner | Week 5-6 | 📋 规划中 |
+| v3-P3 | HTTPRunner + MCPRunner | Week 5-6 | ✓ Complete |
 | v3-P4 | 能力自述 + 智能路由增强 | Week 7-8 | 📋 规划中 |
 | v3-P5 | 可观测性 (Prometheus + 追踪) | Week 9 | 📋 规划中 |
 | v3-P6 | 文档 + 示例 | Week 10 | 📋 规划中 |
@@ -218,4 +218,4 @@ Plans:
 ---
 
 *Generated: 2026-04-06*
-*Last updated: 2026-05-06 — v3 multi-agent roadmap added*
+*Last updated: 2026-05-19 — Phase 6 v3-P3 HTTPRunner + MCPRunner verified complete*

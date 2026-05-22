@@ -78,6 +78,17 @@ export interface ScheduledTask {
   input_artifacts?: string[];
   output_artifacts?: string[];
   acceptance_criteria?: string[];
+  source?: string;
+  source_ref?: string;
+  context?: unknown;
+  files_to_read?: string[];
+  files_to_modify?: string[];
+  relations?: Array<{
+    task_id?: string;
+    type?: string;
+    reason?: string;
+  }>;
+  card_json?: string;
   block_reason?: string;
   result_summary?: string;
   next_action?: string;
@@ -217,6 +228,8 @@ export interface DashboardStats {
   active_sessions: number;
   failed_dispatches: number;
   queued_tasks: number;
+  merge_queue_count: number;
+  merge_queue_tasks: ScheduledTask[];
 }
 
 // PRD-DA-001 types

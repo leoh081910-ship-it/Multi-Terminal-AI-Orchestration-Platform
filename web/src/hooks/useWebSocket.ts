@@ -9,7 +9,7 @@ export interface WSMessage {
   timestamp: string;
 }
 
-const WS_URL = (import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws').replace(/\/$/, '');
+const WS_URL = (import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/v1/ws').replace(/\/$/, '');
 
 function getAuthToken(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)auth_token=([^;]*)/);

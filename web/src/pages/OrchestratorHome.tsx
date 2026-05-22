@@ -109,6 +109,7 @@ const OrchestratorHome: React.FC = () => {
   const activity = stats?.recent_updates ?? [];
   const completions = stats?.recent_done_tasks ?? [];
   const runtimes = stats?.runtime_health ?? [];
+  const mergeQueue = stats?.merge_queue_tasks ?? [];
   const pendingItems = activity.filter((task) => (
     task.status === TaskStatus.BLOCKED ||
     task.dispatch_status === DispatchStatus.FAILED ||
@@ -150,7 +151,7 @@ const OrchestratorHome: React.FC = () => {
         <StatCard title="总任务数" value={stats?.total_tasks || 0} subValue="当前项目正在跟踪的任务总数" icon={<Layers size={24} />} color="cyan" />
         <StatCard title="活跃会话" value={stats?.active_sessions || 0} subValue="当前正在执行的会话数量" icon={<Terminal size={24} />} color="green" />
         <StatCard title="待调度" value={stats?.queued_tasks || 0} subValue="排队中、已派发和运行中的任务" icon={<Radar size={24} />} color="yellow" />
-        <StatCard title="待处理" value={pendingItems.length} subValue="阻塞、失败、待分流或待复核任务" icon={<AlertCircle size={24} />} color="magenta" />
+        <StatCard title="合并队列" value={stats?.merge_queue_count || 0} subValue="已验证并等待串行合并的任务" icon={<CheckCircle size={24} />} color="magenta" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.15fr 1.15fr', gap: '1.5rem' }}>
@@ -250,6 +251,29 @@ const OrchestratorHome: React.FC = () => {
               ))
             ) : (
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>暂无阻塞、失败或待复核任务。</p>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <CheckCircle size={20} color="var(--accent-yellow)" />
+            <h3 style={{ fontSize: '1.05rem' }}>合并队列</h3>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            {isLoading ? (
+              <p>加载中…</p>
+            ) : mergeQueue.length ? (
+              mergeQueue.map((task) => (
+                <div key={task.id} style={listCardStyle}>
+                  <div style={{ color: 'var(--accent-yellow)' }}><CheckCircle size={16} /></div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: '0.86rem', fontWeight: 600 }}>{task.title}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{task.owner_agent} · {task.dispatch_ref || 'no dispatch'} · wave {task.wave ?? '-'}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>等待依赖完成后进入串行合并。</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>合并队列为空。</p>
             )}
           </div>
 

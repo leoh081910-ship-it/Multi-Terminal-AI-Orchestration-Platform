@@ -43,18 +43,12 @@ const EventLogPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [taskFilter, setTaskFilter] = useState(searchParams.get('task_id') ?? '');
   const [dispatchFilter, setDispatchFilter] = useState(searchParams.get('dispatch_ref') ?? '');
-  const [realtimeEvents, setRealtimeEvents] = useState<SchedulerEvent[]>([]);
   const { connected, lastMessage } = useWebSocket(projectId);
 
-  useEffect(() => {
-    setTaskFilter(searchParams.get('task_id') ?? '');
-    setDispatchFilter(searchParams.get('dispatch_ref') ?? '');
-  }, [searchParams]);
-
   const filters = useMemo(() => ({
-    taskId: taskFilter.trim() || undefined,
-    dispatchRef: dispatchFilter.trim() || undefined,
-  }), [dispatchFilter, taskFilter]);
+    taskId: searchParams.get('task_id')?.trim() || undefined,
+    dispatchRef: searchParams.get('dispatch_ref')?.trim() || undefined,
+  }), [searchParams]);
 
   const eventsQuery = useQuery({
     queryKey: ['scheduler-events', projectId, filters.taskId ?? '', filters.dispatchRef ?? ''],
@@ -62,10 +56,6 @@ const EventLogPage: React.FC = () => {
     enabled: !!projectId,
     refetchInterval: connected ? false : 15_000,
   });
-
-  useEffect(() => {
-    setRealtimeEvents([]);
-  }, [projectId, filters.taskId, filters.dispatchRef]);
 
   useEffect(() => {
     const event = websocketMessageToEvent(lastMessage, projectId);
@@ -78,19 +68,11 @@ const EventLogPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['task-events', projectId, event.task_id] });
       queryClient.invalidateQueries({ queryKey: ['task', projectId, event.task_id] });
     }
-
-    setRealtimeEvents((current) => {
-      if (current.some((item) => item.event_id === event.event_id)) return current;
-      return [event, ...current].slice(0, 200);
-    });
   }, [filters.dispatchRef, filters.taskId, lastMessage, projectId, queryClient]);
 
   const events = useMemo(() => {
-    const merged = new Map<string, SchedulerEvent>();
-    for (const event of realtimeEvents) merged.set(event.event_id, event);
-    for (const event of eventsQuery.data ?? []) merged.set(event.event_id, event);
-    return Array.from(merged.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [eventsQuery.data, realtimeEvents]);
+    return [...(eventsQuery.data ?? [])].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [eventsQuery.data]);
 
   const applyFilters = () => {
     const next = new URLSearchParams();

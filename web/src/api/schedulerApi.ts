@@ -40,6 +40,13 @@ interface BackendScheduledTask {
   input_artifacts?: string[];
   output_artifacts?: string[];
   acceptance_criteria?: string[];
+  source?: string;
+  source_ref?: string;
+  context?: unknown;
+  files_to_read?: string[];
+  files_to_modify?: string[];
+  relations?: ScheduledTask['relations'];
+  card_json?: string;
   blocked_reason?: string;
   result_summary?: string;
   next_action?: string;
@@ -81,6 +88,8 @@ interface BoardSummaryResponse {
   recent_updates: BackendScheduledTask[];
   recent_done_tasks: BackendScheduledTask[];
   current_focus: BackendScheduledTask[];
+  merge_queue_count: number;
+  merge_queue_tasks: BackendScheduledTask[];
 }
 
 interface AgentSummaryResponse {
@@ -122,6 +131,13 @@ const mapTask = (task: BackendScheduledTask): ScheduledTask => ({
   input_artifacts: task.input_artifacts,
   output_artifacts: task.output_artifacts,
   acceptance_criteria: task.acceptance_criteria,
+  source: task.source,
+  source_ref: task.source_ref,
+  context: task.context,
+  files_to_read: task.files_to_read,
+  files_to_modify: task.files_to_modify,
+  relations: task.relations,
+  card_json: task.card_json,
   block_reason: task.blocked_reason,
   result_summary: task.result_summary,
   next_action: task.next_action,
@@ -213,6 +229,10 @@ export const schedulerApi = {
       blocked_reason: payload.block_reason,
     });
     return mapTask(response.data);
+  },
+
+  deleteTask: async (projectId: string, taskId: string): Promise<void> => {
+    await client.delete(`${projectBase(projectId)}/scheduler/tasks/${taskId}`);
   },
 
   dispatchTask: async (projectId: string, taskId: string): Promise<ScheduledTask> => {
@@ -326,6 +346,8 @@ export const schedulerApi = {
       active_sessions: runtimes.reduce((sum, runtime) => sum + runtime.active_sessions, 0),
       failed_dispatches: allRecentUpdates.filter((task) => task.dispatch_status === DispatchStatus.FAILED).length,
       queued_tasks: executions.filter((execution) => queuedStatuses.includes(execution.status)).length,
+      merge_queue_count: board.merge_queue_count,
+      merge_queue_tasks: board.merge_queue_tasks.map(mapTask),
     };
   },
 

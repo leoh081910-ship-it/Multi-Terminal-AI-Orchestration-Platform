@@ -1,10 +1,11 @@
 ---
 phase: 6
 slug: v3-p3-httprunner-mcprunner-http-api-agent-mcp-agent-planning-v3-implementation-plan-md-phase-3-httprunner-http-schema-mcprunner-mcp
-status: draft
+status: executed_green
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-13
+updated: 2026-05-19
 ---
 
 # Phase 6 — Validation Strategy
@@ -39,12 +40,12 @@ created: 2026-05-13
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 06-01-01 | 01 | 1 | HTTP-01 | unit | `go test ./internal/runner -run 'TestHTTPRunnerConfig_Validate|TestHTTPRunner_Execute_TemplateBody|TestHTTPRunner_Execute_DefaultBody' -count=1` | existing + new tests | ⬜ pending |
-| 06-01-02 | 01 | 1 | HTTP-01 | unit | `go test ./internal/runner -run 'TestHTTPRunner_TemplateToJSON|TestHTTPRunnerConfig_Validate' -count=1` | existing + new tests | ⬜ pending |
-| 06-02-01 | 02 | 1 | MCP-01 | unit | `go test ./internal/runner -run 'TestMCPRunnerConfig_Validate|TestMCPRunner_Execute|TestMCPRunner_GetCapabilities_DiscoverTools' -count=1` | existing + new tests | ⬜ pending |
-| 06-03-01 | 03 | 2 | HTTP-01/MCP-01 | integration | `go test ./internal/server -run 'TestHandle(Create|Update)Agent_Invalid.*RunnerConfig' -count=1` | new tests | ⬜ pending |
-| 06-04-01 | 04 | 2 | HTTP-01/MCP-01 | frontend | `npm --prefix web run lint && npm --prefix web run build` | existing page | ⬜ pending |
-| 06-05-01 | 05 | 3 | HTTP-01/MCP-01 | docs + full suite | `go test ./... && npm --prefix web run lint && npm --prefix web run build` | existing docs | ⬜ pending |
+| 06-01-01 | 01 | 1 | HTTP-01 | unit | `go test ./internal/runner -run 'TestHTTPRunnerConfig_Validate|TestHTTPRunner_Execute_TemplateBody|TestHTTPRunner_Execute_DefaultBody' -count=1` | existing + new tests | ✅ green |
+| 06-01-02 | 01 | 1 | HTTP-01 | unit | `go test ./internal/runner -run 'TestHTTPRunner_TemplateToJSON|TestHTTPRunnerConfig_Validate' -count=1` | existing + new tests | ✅ green |
+| 06-02-01 | 02 | 1 | MCP-01 | unit | `go test ./internal/runner -run 'TestMCPRunnerConfig_Validate|TestMCPRunner_Execute|TestMCPRunner_GetCapabilities_DiscoverTools' -count=1` | existing + new tests | ✅ green |
+| 06-03-01 | 03 | 2 | HTTP-01/MCP-01 | integration | `go test ./internal/server -run 'TestHandle(Create|Update)Agent_Invalid.*RunnerConfig' -count=1` | new tests | ✅ green |
+| 06-04-01 | 04 | 2 | HTTP-01/MCP-01 | frontend | `npm --prefix web run lint && npm --prefix web run build` | existing page | ✅ green |
+| 06-05-01 | 05 | 3 | HTTP-01/MCP-01 | docs + full suite | `go test ./... && npm --prefix web run lint && npm --prefix web run build` | existing docs | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -55,9 +56,19 @@ created: 2026-05-13
 Existing test infrastructure covers this phase. No new framework installation required.
 
 Required test additions during execution:
-- [ ] `internal/runner/http_runner_test.go` — `toJSON`, RunnerTask field access, default body regression
-- [ ] `internal/runner/mcp_runner_test.go` — `tool_name`, `{name, arguments}` params, SSE rejection, tools/list discovery
-- [ ] `internal/server/*_test.go` — invalid HTTP/MCP create/update returns 400 and does not persist or corrupt existing Agent config
+- [x] `internal/runner/http_runner_test.go` — `toJSON`, RunnerTask field access, default body regression
+- [x] `internal/runner/mcp_runner_test.go` — `tool_name`, `{name, arguments}` params, SSE rejection, tools/list discovery
+- [x] `internal/server/*_test.go` — invalid HTTP/MCP create/update returns 400 and does not persist or corrupt existing Agent config
+
+---
+
+## Executed Validation Results
+
+| Scope | Command | Result |
+|-------|---------|--------|
+| Backend focused | `go test ./internal/runner ./internal/registry ./internal/server -count=1` | ✅ green |
+| Frontend | `npm --prefix web run lint && npm --prefix web run build` | ✅ green, one pre-existing SchedulerBoard hook warning |
+| Full regression | `go test ./... && npm --prefix web run lint && npm --prefix web run build` | ✅ green, same non-blocking warning |
 
 ---
 

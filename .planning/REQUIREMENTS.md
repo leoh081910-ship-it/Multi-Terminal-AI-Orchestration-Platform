@@ -118,7 +118,7 @@
 - [x] **UI-02**: 任务详情页，展示 Task Card 完整字段、状态历史、事件日志
 - [x] **UI-03**: Wave 管理页面，展示各 wave 状态（open/sealed）、支持 seal 操作
 - [x] **UI-04**: 任务创建/编辑表单，校验字段格式约束
-- [ ] **UI-05**: 全局状态仪表盘，展示任务统计（各状态计数）、活跃 dispatch_ref、合并队列状态
+- [x] **UI-05**: 全局状态仪表盘，展示任务统计（各状态计数）、活跃 dispatch_ref、合并队列状态
 - [x] **UI-06**: 实时状态更新，任务状态变更通过 WebSocket 推送到前端
 - [x] **UI-07**: 事件日志浏览器，按任务或 dispatch_ref 筛选查看完整事件链
 
@@ -167,8 +167,8 @@
 | MERG-01 ~ MERG-06 | Phase 4: Integration | Pending |
 | AGNT-01 ~ AGNT-03 | Phase 4: Integration | Pending |
 | CONN-01 ~ CONN-03 | Phase 4: Integration | Pending |
-| API-01 ~ API-03 | Phase 5: Interface | API-01 complete; API-02/API-03 pending |
-| UI-01 ~ UI-07 | Phase 5: Interface | UI-03 and UI-07 complete; remaining UI items pending |
+| API-01 ~ API-03 | Phase 5: Interface | Complete |
+| UI-01 ~ UI-07 | Phase 5: Interface | Complete |
 
 **Coverage:**
 - v1 requirements: 56 total

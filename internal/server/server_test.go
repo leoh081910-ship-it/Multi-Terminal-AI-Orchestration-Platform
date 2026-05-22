@@ -952,6 +952,76 @@ func TestCompatSchedulerProjectScopedWaveRoutesUseProjectAndWaveParams(t *testin
 	}
 }
 
+func TestCompatSchedulerProjectScopedWaveCreate(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "alpha",
+		Projects: []CompatProjectConfig{
+			{ID: "alpha", Name: "Alpha", MainRepoPath: t.TempDir()},
+			{ID: "beta", Name: "Beta", MainRepoPath: t.TempDir()},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	createCompatTask(t, repo, "ALPHA-W3-001", `{"id":"ALPHA-W3-001","project_id":"alpha","dispatch_ref":"alpha-dispatch","state":"queued","transport":"cli","wave":3,"topo_rank":1,"title":"Alpha wave three"}`)
+	createCompatTask(t, repo, "ALPHA-W3-002", `{"id":"ALPHA-W3-002","project_id":"alpha","dispatch_ref":"alpha-dispatch","state":"running","transport":"cli","wave":3,"topo_rank":2,"title":"Alpha wave three running"}`)
+	createCompatTask(t, repo, "BETA-W3-001", `{"id":"BETA-W3-001","project_id":"beta","dispatch_ref":"beta-dispatch","state":"queued","transport":"cli","wave":3,"topo_rank":1,"title":"Beta wave three"}`)
+
+	body := bytes.NewBufferString(`{"dispatch_ref":"alpha-dispatch","wave":3}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/alpha/scheduler/waves", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected create status %d, got %d with body %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+
+	var created compatWaveSummary
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&created); err != nil {
+		t.Fatalf("failed to decode created wave response: %v", err)
+	}
+	if created.ProjectID != "alpha" || created.DispatchRef != "alpha-dispatch" || created.Wave != 3 || created.TaskCount != 2 {
+		t.Fatalf("expected alpha wave 3 summary, got %+v", created)
+	}
+	if created.CountsByStatus[engine.StateQueued] != 1 || created.CountsByStatus[engine.StateRunning] != 1 {
+		t.Fatalf("expected queued/running counts in created wave, got %+v", created)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/alpha/scheduler/waves/alpha-dispatch/3", nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected wave detail status %d, got %d with body %s", http.StatusOK, res.Code, res.Body.String())
+	}
+
+	var detail compatWaveSummary
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode wave detail response: %v", err)
+	}
+	if detail.ProjectID != "alpha" || detail.Wave != 3 || detail.TaskCount != 2 {
+		t.Fatalf("expected alpha wave 3 detail, got %+v", detail)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/projects/alpha/scheduler/waves/alpha-dispatch/3/seal", nil)
+	res = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected seal status %d, got %d with body %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	if err := json.NewDecoder(bytes.NewReader(res.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode sealed wave response: %v", err)
+	}
+	if detail.Status != "sealed" || detail.SealedAt == nil {
+		t.Fatalf("expected sealed wave to include sealed_at, got %+v", detail)
+	}
+}
+
 func TestCompatSchedulerProjectEventsFilterByDispatchAndTask(t *testing.T) {
 	srv, repo, cleanup := setupTestServer(t)
 	defer cleanup()

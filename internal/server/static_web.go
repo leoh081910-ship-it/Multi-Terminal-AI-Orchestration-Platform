@@ -41,10 +41,13 @@ func (s *Server) registerStaticWebRoutes() {
 		s.router.Handle("/assets/*", assetsFS)
 	}
 
-	s.router.Get("/board", func(w http.ResponseWriter, r *http.Request) {
+	serveIndex := func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, indexPath)
-	})
-	s.router.Get("/board/*", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, indexPath)
-	})
+	}
+
+	for _, route := range []string{"/", "/board", "/waves", "/events", "/timeline", "/goals", "/agents", "/swimlane", "/org", "/knowledge"} {
+		s.router.Get(route, serveIndex)
+		s.router.Get(route+"/*", serveIndex)
+	}
+	s.router.Get("/tasks/*", serveIndex)
 }
