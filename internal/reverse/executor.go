@@ -212,7 +212,7 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 			})
 			state.CurrentPhase = "ida_failed"
 			SaveAnalysisState(config.AnalysisStateMDPath, state)
-			return nil, fmt.Errorf("IDA analysis failed: %w", err)
+			return nil, &EnvironmentUnavailableError{Reason: "ida_mcp_unavailable"}
 		}
 
 		// Update state with discovered structures and functions
@@ -226,12 +226,12 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 		sourceCode := e.generateCCode(staticAnalysis, state)
 
 		// Write source code to artifact directory
-		artifactDir := filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse")
-		if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		paths := reverseArtifactPaths(config.ArtifactBasePath, config.TaskID)
+		if err := os.MkdirAll(paths.Dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create artifact directory: %w", err)
 		}
 
-		sourcePath := filepath.Join(artifactDir, "final.c")
+		sourcePath := paths.FinalC
 		if err := os.WriteFile(sourcePath, []byte(sourceCode), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write source file: %w", err)
 		}
@@ -239,7 +239,7 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 		state.CurrentPhase = "compile"
 
 		// Step 3: Compile the C code
-		binaryPath := filepath.Join(artifactDir, "static_rebuild")
+		binaryPath := filepath.Join(paths.Dir, "static_rebuild")
 		cmd := exec.CommandContext(ctx, "gcc", "-o", binaryPath, sourcePath, "-Wall", "-O2")
 		compileOutput, err := cmd.CombinedOutput()
 		if err != nil {
@@ -297,16 +297,16 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 		diffReport := e.calculateDiff(state.StaticOutput, state.FridaOracleOutput)
 
 		// Write diff report
-		diffReportPath := filepath.Join(artifactDir, "diff_report.json")
+		diffReportPath := paths.DiffReport
 		diffReportData, _ := json.MarshalIndent(diffReport, "", "  ")
 		os.WriteFile(diffReportPath, diffReportData, 0644)
 
 		// Write static output
-		staticOutputPath := filepath.Join(artifactDir, "static_output.json")
+		staticOutputPath := paths.StaticOutput
 		os.WriteFile(staticOutputPath, []byte(state.StaticOutput), 0644)
 
 		// Write Frida output
-		fridaOutputPath := filepath.Join(artifactDir, "frida_oracle_output.json")
+		fridaOutputPath := paths.FridaOutput
 		os.WriteFile(fridaOutputPath, []byte(state.FridaOracleOutput), 0644)
 
 		state.LastMatchRate = diffReport.MatchRate
@@ -318,10 +318,11 @@ func (e *Executor) Execute(ctx context.Context, config *ReverseTaskConfig) (*Fin
 
 		// Step 7: Check match rate
 		if diffReport.MatchRate >= 100.0 {
-			// Success! Copy final.c to the final artifact path
-			finalArtifactPath := filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse", "final.c")
-			if err := copyFile(sourcePath, finalArtifactPath); err != nil {
-				return nil, fmt.Errorf("failed to copy final artifact: %w", err)
+			if err := validateFinalC(sourcePath); err != nil {
+				state.CurrentPhase = "final_artifact_invalid"
+				state.LastError = err.Error()
+				SaveAnalysisState(config.AnalysisStateMDPath, state)
+				return nil, fmt.Errorf("reverse_final_artifact_invalid: %w", err)
 			}
 
 			state.CurrentPhase = "complete"
@@ -382,7 +383,8 @@ func (e *Executor) generateCCode(analysis *StaticAnalysis, state *AnalysisState)
 	// Main function for testing
 	buf.WriteString("// Main function for oracle input processing\n")
 	buf.WriteString("int main(int argc, char* argv[]) {\n")
-	buf.WriteString("    // TODO: Implement main logic based on oracle_input_spec\n")
+	buf.WriteString("    (void)argc;\n")
+	buf.WriteString("    (void)argv;\n")
 	buf.WriteString("    printf(\"Reverse engineering target initialized\\n\");\n")
 	buf.WriteString("    return 0;\n")
 	buf.WriteString("}\n")
