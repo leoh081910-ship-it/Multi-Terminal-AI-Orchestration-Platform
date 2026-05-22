@@ -65,6 +65,9 @@ export type TaskType = string;
 export interface ScheduledTask {
   project_id?: string;
   id: string;
+  dispatch_ref?: string;
+  wave?: number;
+  topo_rank?: number;
   title: string;
   owner_agent: Agent;
   status: TaskStatus;
@@ -75,6 +78,17 @@ export interface ScheduledTask {
   input_artifacts?: string[];
   output_artifacts?: string[];
   acceptance_criteria?: string[];
+  source?: string;
+  source_ref?: string;
+  context?: unknown;
+  files_to_read?: string[];
+  files_to_modify?: string[];
+  relations?: Array<{
+    task_id?: string;
+    type?: string;
+    reason?: string;
+  }>;
+  card_json?: string;
   block_reason?: string;
   result_summary?: string;
   next_action?: string;
@@ -115,6 +129,8 @@ export interface ScheduledTask {
 
 export interface CreateScheduledTaskInput {
   title: string;
+  dispatch_ref?: string;
+  wave?: number;
   owner_agent: Agent;
   status?: TaskStatus;
   type?: string;
@@ -131,6 +147,10 @@ export interface CreateScheduledTaskInput {
 }
 
 export interface UpdateScheduledTaskInput {
+  title?: string;
+  dispatch_ref?: string;
+  wave?: number;
+  type?: string;
   owner_agent?: Agent;
   status?: TaskStatus;
   priority?: number;
@@ -208,6 +228,8 @@ export interface DashboardStats {
   active_sessions: number;
   failed_dispatches: number;
   queued_tasks: number;
+  merge_queue_count: number;
+  merge_queue_tasks: ScheduledTask[];
 }
 
 // PRD-DA-001 types
@@ -255,4 +277,48 @@ export interface WorkerStatus {
 
 export interface SystemWorkersResponse {
   workers: WorkerStatus[];
+}
+
+export interface SchedulerWave {
+  project_id: string;
+  dispatch_ref: string;
+  wave: number;
+  status: 'open' | 'sealed';
+  task_count: number;
+  counts_by_status: Record<string, number>;
+  created_at: string;
+  sealed_at?: string;
+}
+
+export interface SchedulerEvent {
+  event_id: string;
+  project_id: string;
+  task_id: string;
+  dispatch_ref?: string;
+  event_type: string;
+  from_state?: string;
+  to_state?: string;
+  timestamp: string;
+  reason?: string;
+  attempt: number;
+  transport?: string;
+  runner_id?: string;
+  details?: string;
+}
+
+export interface AgentCallRecord {
+  id: string;
+  task_id: string;
+  agent_id: string;
+  runner_type: string;
+  task_type: string;
+  trace_id: string;
+  status: string;
+  exit_code: number;
+  error_message: string;
+  output_summary: string;
+  duration_ms: number;
+  started_at: string;
+  finished_at: string;
+  created_at: string;
 }

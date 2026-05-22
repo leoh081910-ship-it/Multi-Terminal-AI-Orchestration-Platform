@@ -42,6 +42,9 @@ var compatTaskStatuses = []string{
 type compatSchedulerTask struct {
 	ProjectID           string    `json:"project_id,omitempty"`
 	TaskID              string    `json:"task_id"`
+	DispatchRef         string    `json:"dispatch_ref,omitempty"`
+	Wave                int       `json:"wave"`
+	TopoRank            int       `json:"topo_rank"`
 	Title               string    `json:"title"`
 	OwnerAgent          string    `json:"owner_agent"`
 	Status              string    `json:"status"`
@@ -52,6 +55,13 @@ type compatSchedulerTask struct {
 	InputArtifacts      []string  `json:"input_artifacts"`
 	OutputArtifacts     []string  `json:"output_artifacts"`
 	AcceptanceCriteria  []string  `json:"acceptance_criteria"`
+	Source              string    `json:"source,omitempty"`
+	SourceRef           string    `json:"source_ref,omitempty"`
+	Context             any       `json:"context,omitempty"`
+	FilesToRead         []string  `json:"files_to_read"`
+	FilesToModify       []string  `json:"files_to_modify"`
+	Relations           []any     `json:"relations"`
+	CardJSON            string    `json:"card_json,omitempty"`
 	BlockedReason       string    `json:"blocked_reason,omitempty"`
 	ResultSummary       string    `json:"result_summary,omitempty"`
 	NextAction          string    `json:"next_action,omitempty"`
@@ -145,6 +155,8 @@ type compatBoardSummary struct {
 	RecentUpdates   []compatSchedulerTask `json:"recent_updates"`
 	RecentDoneTasks []compatSchedulerTask `json:"recent_done_tasks"`
 	CurrentFocus    []compatSchedulerTask `json:"current_focus"`
+	MergeQueueCount int                   `json:"merge_queue_count"`
+	MergeQueueTasks []compatSchedulerTask `json:"merge_queue_tasks"`
 }
 
 type compatAgentTaskSlice struct {
@@ -163,6 +175,33 @@ type compatAgentsSummary struct {
 	Agents []compatAgentSummaryItem `json:"agents"`
 }
 
+type compatWaveSummary struct {
+	ProjectID      string         `json:"project_id"`
+	DispatchRef    string         `json:"dispatch_ref"`
+	Wave           int            `json:"wave"`
+	Status         string         `json:"status"`
+	TaskCount      int            `json:"task_count"`
+	CountsByStatus map[string]int `json:"counts_by_status"`
+	CreatedAt      time.Time      `json:"created_at"`
+	SealedAt       *time.Time     `json:"sealed_at,omitempty"`
+}
+
+type compatEventRecord struct {
+	EventID     string    `json:"event_id"`
+	ProjectID   string    `json:"project_id"`
+	TaskID      string    `json:"task_id"`
+	DispatchRef string    `json:"dispatch_ref,omitempty"`
+	EventType   string    `json:"event_type"`
+	FromState   string    `json:"from_state,omitempty"`
+	ToState     string    `json:"to_state,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
+	Reason      string    `json:"reason,omitempty"`
+	Attempt     int       `json:"attempt"`
+	Transport   string    `json:"transport,omitempty"`
+	RunnerID    string    `json:"runner_id,omitempty"`
+	Details     string    `json:"details,omitempty"`
+}
+
 func (s *Server) handleCompatListProjects(w http.ResponseWriter, r *http.Request) {
 	registry := s.getProjectRegistry()
 	if registry == nil {
@@ -178,6 +217,19 @@ func (s *Server) handleCompatListProjects(w http.ResponseWriter, r *http.Request
 	s.writeJSON(w, http.StatusOK, registry.summaries())
 }
 
+// handleCompatListSchedulerTasks lists tasks with pagination and filtering.
+// @Summary List scheduled tasks
+// @Tags scheduler
+// @Produce json
+// @Security BearerAuth
+// @Param project_id query string false "Project ID"
+// @Param status query string false "Filter by status"
+// @Param owner_agent query string false "Filter by agent"
+// @Param type query string false "Filter by type"
+// @Param limit query int false "Page size (default 50, max 200)"
+// @Param offset query int false "Offset (default 0)"
+// @Success 200 {object} map[string]any
+// @Router /scheduler/tasks [get]
 func (s *Server) handleCompatListSchedulerTasks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := s.compatProjectIDFromRequest(r)
@@ -206,7 +258,267 @@ func (s *Server) handleCompatListSchedulerTasks(w http.ResponseWriter, r *http.R
 		filtered = append(filtered, task)
 	}
 
-	s.writeJSON(w, http.StatusOK, filtered)
+	limit, offset := parsePagination(r)
+	total := len(filtered)
+	if offset >= total {
+		filtered = []compatSchedulerTask{}
+	} else {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		filtered = filtered[offset:end]
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"items":  filtered,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+func (s *Server) handleCompatGetSchedulerTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	projectID := s.compatProjectIDFromRequest(r)
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to load compatibility scheduler task")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load scheduler task"})
+		return
+	}
+	if task == nil || !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mapCompatTask(task))
+}
+
+func (s *Server) handleCompatDeleteSchedulerTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	projectID := s.compatProjectIDFromRequest(r)
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to load compatibility scheduler task for delete")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to delete scheduler task"})
+		return
+	}
+	if task == nil || !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	deleted, err := s.repo.DeleteTask(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to delete compatibility scheduler task")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to delete scheduler task"})
+		return
+	}
+	if !deleted {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{"id": id, "deleted": true})
+}
+
+func (s *Server) handleCompatListTaskEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	taskID := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to load compatibility task events")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load task events"})
+		return
+	}
+	if task == nil || !s.compatTaskBelongsToProject(task, projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	events, err := s.repo.ListEventsByTaskID(ctx, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to list compatibility task events")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load task events"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mapCompatEvents(events, map[string]string{taskID: task.DispatchRef}))
+}
+
+func (s *Server) handleCompatListWaves(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	waves, err := s.repo.ListWavesByProject(ctx, projectID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to list compatibility waves")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list waves"})
+		return
+	}
+
+	projectTasks, err := s.repo.ListTasksByProject(ctx, projectID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to list project tasks for waves")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list waves"})
+		return
+	}
+
+	summaries := make([]compatWaveSummary, 0, len(waves))
+	for _, waveRow := range waves {
+		summaries = append(summaries, s.buildCompatWaveSummary(waveRow, projectTasks))
+	}
+
+	s.writeJSON(w, http.StatusOK, summaries)
+}
+
+func (s *Server) handleCompatGetWave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	dispatchRef := chi.URLParam(r, "dispatchRef")
+	waveNum, ok := parseCompatWaveParam(w, r)
+	if !ok {
+		return
+	}
+
+	waveRow, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to get compatibility wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to get wave"})
+		return
+	}
+	if waveRow == nil || normalizeCompatProjectID(waveRow.ProjectID) != normalizeCompatProjectID(projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Wave not found"})
+		return
+	}
+
+	projectTasks, err := s.repo.ListTasksByProjectAndDispatchRef(ctx, projectID, dispatchRef)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("dispatch_ref", dispatchRef).Msg("failed to list wave tasks")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to get wave"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.buildCompatWaveSummary(waveRow, projectTasks))
+}
+
+func (s *Server) handleCompatCreateWave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+
+	payload, err := decodeCompatRequestMap(r)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Invalid request body"})
+		return
+	}
+
+	dispatchRef := readString(payload, "dispatch_ref")
+	waveNum, ok := readInt(payload, "wave")
+	if dispatchRef == "" || !ok || waveNum < 1 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "dispatch_ref and wave are required"})
+		return
+	}
+
+	if err := s.repo.UpsertWave(ctx, dispatchRef, waveNum); err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to create compatibility wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to create wave"})
+		return
+	}
+
+	waveRow, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to reload compatibility wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to create wave"})
+		return
+	}
+	if waveRow == nil || normalizeCompatProjectID(waveRow.ProjectID) != normalizeCompatProjectID(projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Wave not found"})
+		return
+	}
+
+	projectTasks, err := s.repo.ListTasksByProjectAndDispatchRef(ctx, projectID, dispatchRef)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("dispatch_ref", dispatchRef).Msg("failed to list created wave tasks")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to create wave"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusCreated, s.buildCompatWaveSummary(waveRow, projectTasks))
+}
+
+func (s *Server) handleCompatSealWave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	dispatchRef := chi.URLParam(r, "dispatchRef")
+	waveNum, ok := parseCompatWaveParam(w, r)
+	if !ok {
+		return
+	}
+
+	waveRow, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to load wave for seal")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+	if waveRow == nil || normalizeCompatProjectID(waveRow.ProjectID) != normalizeCompatProjectID(projectID) {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Wave not found"})
+		return
+	}
+
+	if err := s.repo.SealWave(ctx, dispatchRef, waveNum); err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to seal compatibility wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+
+	sealedWave, err := s.repo.GetWave(ctx, dispatchRef, waveNum)
+	if err != nil {
+		s.logger.Error().Err(err).Str("dispatch_ref", dispatchRef).Int("wave", waveNum).Msg("failed to reload sealed wave")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+	projectTasks, err := s.repo.ListTasksByProjectAndDispatchRef(ctx, projectID, dispatchRef)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("dispatch_ref", dispatchRef).Msg("failed to list sealed wave tasks")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to seal wave"})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.buildCompatWaveSummary(sealedWave, projectTasks))
+}
+
+func (s *Server) handleCompatListProjectEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
+	dispatchRef := strings.TrimSpace(r.URL.Query().Get("dispatch_ref"))
+
+	events, err := s.repo.ListEventsByProject(ctx, projectID, dispatchRef, taskID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Str("task_id", taskID).Str("dispatch_ref", dispatchRef).Msg("failed to list compatibility project events")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list events"})
+		return
+	}
+
+	tasks, err := s.repo.ListTasksByProject(ctx, projectID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to load project tasks for event mapping")
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to list events"})
+		return
+	}
+	dispatchByTask := make(map[string]string, len(tasks))
+	for _, taskRow := range tasks {
+		dispatchByTask[taskRow.ID] = taskRow.DispatchRef
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mapCompatEvents(events, dispatchByTask))
 }
 
 func (s *Server) handleCompatCreateSchedulerTask(w http.ResponseWriter, r *http.Request) {
@@ -240,6 +552,89 @@ func (s *Server) handleCompatCreateSchedulerTask(w http.ResponseWriter, r *http.
 	}
 
 	s.writeJSON(w, http.StatusCreated, s.mapCompatTask(task))
+}
+
+// handleCompatBulkCreateSchedulerTasks creates multiple tasks in a single request.
+// @Summary Bulk create scheduled tasks
+// @Tags scheduler
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param tasks body []map[string]interface{} true "Array of task payloads"
+// @Success 201 {object} map[string]any
+// @Failure 400 {object} map[string]string
+// @Router /scheduler/tasks/bulk [post]
+func (s *Server) handleCompatBulkCreateSchedulerTasks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+
+	defer r.Body.Close()
+	var payloads []map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&payloads); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Invalid request body: expected JSON array"})
+		return
+	}
+
+	if len(payloads) == 0 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Empty task list"})
+		return
+	}
+	if len(payloads) > 100 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Too many tasks (max 100)"})
+		return
+	}
+
+	created := make([]compatSchedulerTask, 0, len(payloads))
+	errors := make([]map[string]string, 0)
+
+	for i, payload := range payloads {
+		payload["project_id"] = projectID
+		card, err := buildCompatTaskCard(payload, nil, "", s.defaultCompatProjectID())
+		if err != nil {
+			errors = append(errors, map[string]string{
+				"index":   fmt.Sprintf("%d", i),
+				"detail":  err.Error(),
+				"task_id": readString(payload, "task_id"),
+			})
+			continue
+		}
+
+		if _, err := s.repo.CreateTask(ctx, card); err != nil {
+			s.logger.Error().Err(err).Str("task_id", card.ID).Int("index", i).Msg("bulk create: failed to create task")
+			errors = append(errors, map[string]string{
+				"index":   fmt.Sprintf("%d", i),
+				"detail":  "Failed to create task",
+				"task_id": card.ID,
+			})
+			continue
+		}
+
+		task, err := s.repo.GetTaskByID(ctx, card.ID)
+		if err != nil {
+			s.logger.Error().Err(err).Str("task_id", card.ID).Msg("bulk create: failed to reload task")
+			errors = append(errors, map[string]string{
+				"index":   fmt.Sprintf("%d", i),
+				"detail":  "Failed to load created task",
+				"task_id": card.ID,
+			})
+			continue
+		}
+
+		created = append(created, s.mapCompatTask(task))
+	}
+
+	status := http.StatusCreated
+	if len(errors) > 0 && len(created) == 0 {
+		status = http.StatusBadRequest
+	} else if len(errors) > 0 {
+		status = http.StatusMultiStatus
+	}
+
+	s.writeJSON(w, status, map[string]any{
+		"created": created,
+		"errors":  errors,
+		"total":   len(payloads),
+	})
 }
 
 func (s *Server) handleCompatUpdateSchedulerTask(w http.ResponseWriter, r *http.Request) {
@@ -412,6 +807,7 @@ func (s *Server) handleCompatBoardSummary(w http.ResponseWriter, r *http.Request
 	blockedCount := 0
 	recentDone := make([]compatSchedulerTask, 0, 5)
 	currentFocus := make([]compatSchedulerTask, 0, 5)
+	mergeQueue := make([]compatSchedulerTask, 0, 5)
 	for _, task := range tasks {
 		countsByStatus[task.Status]++
 		countsByAgent[task.OwnerAgent]++
@@ -423,6 +819,9 @@ func (s *Server) handleCompatBoardSummary(w http.ResponseWriter, r *http.Request
 		}
 		if (task.Status == "assigned" || task.Status == "in_progress") && len(currentFocus) < 5 {
 			currentFocus = append(currentFocus, task)
+		}
+		if task.Status == "verified" && len(mergeQueue) < 5 {
+			mergeQueue = append(mergeQueue, task)
 		}
 	}
 
@@ -439,6 +838,8 @@ func (s *Server) handleCompatBoardSummary(w http.ResponseWriter, r *http.Request
 		RecentUpdates:   recentUpdates,
 		RecentDoneTasks: recentDone,
 		CurrentFocus:    currentFocus,
+		MergeQueueCount: countsByStatus["verified"],
+		MergeQueueTasks: mergeQueue,
 	})
 }
 
@@ -586,6 +987,9 @@ func (s *Server) mapCompatTask(task *ent.Task) compatSchedulerTask {
 	return compatSchedulerTask{
 		ProjectID:           projectID,
 		TaskID:              view.ID,
+		DispatchRef:         view.DispatchRef,
+		Wave:                view.Wave,
+		TopoRank:            view.TopoRank,
 		Title:               title,
 		OwnerAgent:          ownerAgent,
 		Status:              status,
@@ -596,6 +1000,13 @@ func (s *Server) mapCompatTask(task *ent.Task) compatSchedulerTask {
 		InputArtifacts:      compatStringSliceField(payload, "input_artifacts"),
 		OutputArtifacts:     compatStringSliceField(payload, "output_artifacts"),
 		AcceptanceCriteria:  compatStringSliceField(payload, "acceptance_criteria"),
+		Source:              readString(payload, "source"),
+		SourceRef:           readString(payload, "source_ref"),
+		Context:             payload["context"],
+		FilesToRead:         compatStringSliceField(payload, "files_to_read"),
+		FilesToModify:       compatStringSliceField(payload, "files_to_modify"),
+		Relations:           compatAnySliceField(payload, "relations"),
+		CardJSON:            view.CardJSON,
 		BlockedReason:       firstCompatNonEmpty(readString(payload, "blocked_reason"), readString(payload, "block_reason")),
 		ResultSummary:       readString(payload, "result_summary"),
 		NextAction:          readString(payload, "next_action"),
@@ -995,6 +1406,17 @@ func compatStringSliceValue(values []string) []string {
 	return values
 }
 
+func compatAnySliceField(payload map[string]interface{}, key string) []any {
+	if payload == nil {
+		return []any{}
+	}
+	items, ok := payload[key].([]interface{})
+	if !ok || len(items) == 0 {
+		return []any{}
+	}
+	return items
+}
+
 func readDependsOnRelations(payload map[string]interface{}) []string {
 	if payload == nil {
 		return nil
@@ -1067,9 +1489,6 @@ func readIntDefault(payload map[string]interface{}, fallback int, key string) in
 func compatWorkflowState(status, dispatchStatus string) string {
 	switch status {
 	case "assigned":
-		if dispatchStatus == "pending" {
-			return engine.StateRouted
-		}
 		return engine.StateRouted
 	case "in_progress":
 		if dispatchStatus == "dispatched" {
@@ -1101,6 +1520,10 @@ func compatWorkflowState(status, dispatchStatus string) string {
 		return engine.StateTriage
 	case "review_pending":
 		return engine.StateReviewPending
+	case "decomposing":
+		return engine.StateDecomposing
+	case "awaiting_approval":
+		return engine.StateAwaitingApproval
 	}
 
 	switch dispatchStatus {
@@ -1220,6 +1643,12 @@ func mapCompatWorkflowStatus(state string) string {
 		return "triage"
 	case engine.StateReviewPending:
 		return "review_pending"
+	case engine.StateDecomposing:
+		return "in_progress"
+	case engine.StateAwaitingApproval:
+		return "review"
+	case engine.StateBlocked:
+		return "blocked"
 	default:
 		return "backlog"
 	}
@@ -1243,6 +1672,12 @@ func mapCompatDispatchStatus(state string) string {
 		return "triage"
 	case engine.StateReviewPending:
 		return "review_pending"
+	case engine.StateDecomposing:
+		return "running"
+	case engine.StateAwaitingApproval:
+		return "completed"
+	case engine.StateBlocked:
+		return "failed"
 	default:
 		return "pending"
 	}

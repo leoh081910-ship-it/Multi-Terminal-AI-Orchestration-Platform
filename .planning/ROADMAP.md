@@ -29,9 +29,10 @@
   5. Event logging records all state transitions atomically with task updates (PERS-05)
   6. Wave CRUD operations work (create, query, seal) with `(dispatch_ref, wave)` uniqueness enforcement
   7. SQLite uses WAL mode + busy_timeout for concurrent access (PERS-06)
-**Plans:** 2 plans
+**Plans:** 3 plans
 - [x] 01-foundation-01-PLAN.md — Go module + ent schemas + code generation ✓
 - [x] 01-foundation-02-PLAN.md — Repository + server + health check ✓
+- [x] 01-foundation-03-PLAN.md — Close API-01 REST gaps with task delete and persisted event query ✓
 
 ### Phase 2: Core Engine
 **Goal**: 13-state machine orchestration with dependency and wave management
@@ -107,7 +108,10 @@
   7. Web UI provides real-time updates via WebSocket
   8. Reverse validation tasks correctly check algorithm correctness from `artifacts/{task_id}/reverse/`
   9. Reverse validation ensures `match_rate = 100%` before allowing state progression
-**Plans**: TBD
+**Plans:** 3 plans
+- [x] 05-interface-01-PLAN.md — Formal route/nav/home IA consolidation ✓
+- [x] 05-interface-02-PLAN.md — Wave management and event log UI ✓
+- [x] 05-interface-03-PLAN.md — Task list/detail/form and realtime refresh closure ✓
 **UI hint**: yes
 
 ---
@@ -116,11 +120,11 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/2 | ✓ Complete | 2026-04-07 |
+| 1. Foundation | 3/3 | ✓ Complete | 2026-05-15 |
 | 2. Core Engine | — | ✓ Complete | 2026-04-09 |
 | 3. Execution Layer | — | ✓ Complete | 2026-04-10 |
 | 4. Integration | — | ✓ Complete | 2026-04-11 |
-| 5. Interface | — | ✓ Complete | 2026-04-11 |
+| 5. Interface | 3/3 | ✓ Complete | 2026-05-19 |
 
 ---
 
@@ -148,5 +152,70 @@
 
 ---
 
+---
+
+## v3: 通用多 AI Agent 编排平台 (2026-05-06)
+
+### Overview
+
+升级平台从硬编码 3 个 AI 平台（Claude/Codex/Gemini）为支持任意 Agent 的通用编排系统。
+
+**核心变更**:
+- 新增 `Runner` 接口定义执行契约
+- 新增 `AgentRegistry` 支持动态注册/注销
+- 新增 `HTTPRunner` 支持 HTTP API 型 Agent
+- 新增 `MCPRunner` 支持 MCP 协议 Agent
+- Agent 能力自述 + 智能路由增强
+
+**文档**:
+- [Roadmap](v3-multi-agent-roadmap.md)
+- [Implementation Plan](v3-implementation-plan.md)
+- [PR Template](v3-pr-template.md)
+
+### Phases
+
+| Phase | 内容 | 周期 | 状态 |
+|-------|------|------|------|
+| v3-P1 | Runner 接口 + CLIRunner 适配 | Week 1-2 | 📋 规划中 |
+| v3-P2 | Agent Registry + 动态注册 | Week 3-4 | 📋 规划中 |
+| v3-P3 | HTTPRunner + MCPRunner | Week 5-6 | ✓ Complete |
+| v3-P4 | 能力自述 + 智能路由增强 | Week 7-8 | 📋 规划中 |
+| v3-P5 | 可观测性 (Prometheus + 追踪) | Week 9 | 📋 规划中 |
+| v3-P6 | 文档 + 示例 | Week 10 | 📋 规划中 |
+
+### Requirements (新增)
+
+| ID | 描述 | Phase |
+|----|-------|-------|
+| RN-01 | Runner 接口定义 | P1 |
+| RN-02 | CLIRunner 实现（封装 transport） | P1 |
+| RN-03 | CapabilityManifest 能力自述模型 | P1 |
+| REG-01 | AgentRegistry 动态注册中心 | P2 |
+| REG-02 | 心跳机制 + 状态管理 | P2 |
+| REG-03 | HTTP API 动态注册/注销 | P2 |
+| HTTP-01 | HTTPRunner HTTP API 调用 | P3 |
+| MCP-01 | MCPRunner MCP 协议支持 | P3 |
+| ROUT-01 | 基于 Manifest 的能力匹配路由 | P4 |
+| ROUT-02 | 能力缓存与刷新 | P4 |
+| OBS-01 | Runner 执行链路追踪 | P5 |
+| OBS-02 | Prometheus Agent 指标 | P5 |
+
+### Phase 6: v3-P3 HTTPRunner + MCPRunner — 支持 HTTP API 型 Agent 和 MCP 协议 Agent。范围来自 .planning/v3-implementation-plan.md Phase 3：HTTPRunner 核心、HTTP 配置 Schema、MCPRunner 基础、MCP 能力发现、示例配置、端到端测试。
+
+**Goal:** HTTPRunner/MCPRunner hardened for Phase 6 contract, org API pre-persistence validation, AgentWorkbench frontend alignment, docs/examples reconciliation.
+**Requirements**: HTTP-01, MCP-01
+**Depends on:** Phase 5
+**Plans:** 6 plans — all complete
+
+Plans:
+- [x] 01: HTTPRunner config validation + template support
+- [x] 02: MCPRunner Phase 6 hardening (tool_name, HTTP-only, {name,arguments})
+- [x] 03: Org Agent API pre-persistence runner validation
+- [x] 04: AgentWorkbench frontend Phase 6 alignment
+- [x] 05: Docs/examples reconciliation
+- [x] 06: Full regression + validation gate
+
+---
+
 *Generated: 2026-04-06*
-*Last updated: 2026-04-12 after roadmap sync — all 5 phases confirmed complete from codebase*
+*Last updated: 2026-05-19 — Phase 6 v3-P3 HTTPRunner + MCPRunner verified complete*

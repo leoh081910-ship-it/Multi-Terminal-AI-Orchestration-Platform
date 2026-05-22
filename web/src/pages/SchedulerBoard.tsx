@@ -1,7 +1,8 @@
-﻿import React, { useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, CircleDashed, Clock, Filter, Import, Info, Play, Plus, Radar, RefreshCcw, RotateCcw, Tag, Terminal, User, X, GitBranch, Activity, Zap } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { useProject } from '../hooks/useProject';
 import { Agent, DispatchMode, DispatchStatus, TaskStatus, TaskType } from '../types/scheduler';
 import type { BulkImportTaskDraft, CreateScheduledTaskInput, ScheduledTask, UpdateScheduledTaskInput } from '../types/scheduler';
@@ -31,8 +32,20 @@ const systemTaskTypeLabels: Record<string, string> = { 'artifact-fix': '产物�
 const inputStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', borderRadius: 8, color: 'white', padding: '0.75rem' };
 const bulkPanelStyle: React.CSSProperties = { marginTop: '1rem', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '1rem', background: 'rgba(255,255,255,0.02)' };
 type ValidBulkDraft = BulkImportTaskDraft & { payload: CreateScheduledTaskInput };
+type SortMode = 'updated_desc' | 'updated_asc' | 'priority_desc' | 'wave_asc';
 
-const createDefaultForm = (): CreateScheduledTaskInput => ({ title: '', owner_agent: Agent.CLAUDE, status: TaskStatus.BACKLOG, type: TaskType.INTEGRATION, priority: 3, description: '', next_action: '', dispatch_mode: DispatchMode.AUTO, auto_dispatch_enabled: true });
+const idPattern = /^[a-z0-9_-]+$/;
+const splitLines = (value?: string | string[]) => (Array.isArray(value) ? value : (value || '').split(/[,\n]/)).map((item) => item.trim()).filter(Boolean);
+const joinLines = (value?: string[]) => (value || []).join('\n');
+const validateTaskForm = (payload: CreateScheduledTaskInput | UpdateScheduledTaskInput) => {
+  if ('title' in payload && !payload.title?.trim()) return '任务标题不能为空';
+  if (payload.dispatch_ref && (!idPattern.test(payload.dispatch_ref) || payload.dispatch_ref.length > 32)) return 'dispatch_ref 只能包含小写字母、数字、下划线、连字符，长度 1-32';
+  if (payload.wave !== undefined && (!Number.isInteger(payload.wave) || payload.wave < 1)) return 'wave 必须是正整数';
+  if (payload.depends_on?.some((id) => !idPattern.test(id) || id.length > 16)) return '依赖任务 ID 只能包含小写字母、数字、下划线、连字符，长度 1-16';
+  return null;
+};
+
+const createDefaultForm = (): CreateScheduledTaskInput => ({ title: '', dispatch_ref: '', wave: 1, owner_agent: Agent.CLAUDE, status: TaskStatus.BACKLOG, type: TaskType.INTEGRATION, priority: 3, description: '', next_action: '', depends_on: [], acceptance_criteria: [], dispatch_mode: DispatchMode.AUTO, auto_dispatch_enabled: true });
 const parseBulkTaskInput = (input: string, defaults: Pick<CreateScheduledTaskInput, 'owner_agent' | 'status' | 'type' | 'priority'>): BulkImportTaskDraft[] =>
   input.split(/\r?\n/).reduce<BulkImportTaskDraft[]>((drafts, line, index) => {
     const raw = line.trim();
@@ -71,31 +84,88 @@ const SchedulerBoard: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<ScheduledTask | null>(null);
   const [agentFilter, setAgentFilter] = useState<'ALL' | Agent>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | TaskStatus>('ALL');
+  const [waveFilter, setWaveFilter] = useState<'ALL' | string>('ALL');
+  const [dispatchRefFilter, setDispatchRefFilter] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('updated_desc');
+  const [formError, setFormError] = useState<string | null>(null);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
   const [bulkSummary, setBulkSummary] = useState<string | null>(null);
   const [bulkErrorLines, setBulkErrorLines] = useState<BulkImportTaskDraft[]>([]);
   const [form, setForm] = useState<CreateScheduledTaskInput>(createDefaultForm());
+  const { connected, lastMessage } = useWebSocket(projectId);
   const activeSelectedTask = selectedTask?.project_id === projectId || !selectedTask?.project_id ? selectedTask : null;
-  const { data: tasks = [], isLoading } = useQuery({ queryKey: ['scheduled-tasks', projectId], queryFn: () => schedulerApi.getTasks(projectId), enabled: Boolean(projectId), refetchInterval: 4000 });
-  const { data: stats } = useQuery({ queryKey: ['scheduler-stats', projectId], queryFn: () => schedulerApi.getStats(projectId), enabled: Boolean(projectId), refetchInterval: 4000 });
-  const { data: systemHealth } = useQuery({ queryKey: ['system-health'], queryFn: () => schedulerApi.getSystemHealth(), refetchInterval: 5000 });
-  const { data: systemWorkers } = useQuery({ queryKey: ['system-workers'], queryFn: () => schedulerApi.getSystemWorkers(), refetchInterval: 5000 });
-  const { data: selectedExecution } = useQuery({ queryKey: ['task-execution', projectId, activeSelectedTask?.id], queryFn: () => schedulerApi.getTaskExecution(projectId, activeSelectedTask!.id), enabled: Boolean(projectId && activeSelectedTask?.id), refetchInterval: 2000 });
-  const { data: selectedLineage } = useQuery({ queryKey: ['task-lineage', projectId, activeSelectedTask?.id], queryFn: () => schedulerApi.getTaskLineage(projectId, activeSelectedTask!.id), enabled: Boolean(projectId && activeSelectedTask?.id), refetchInterval: 4000 });
-  const invalidateProjectQueries = () => { queryClient.invalidateQueries({ queryKey: ['scheduled-tasks', projectId] }); queryClient.invalidateQueries({ queryKey: ['scheduler-stats', projectId] }); };
-  const createTaskMutation = useMutation({ mutationFn: (payload: CreateScheduledTaskInput) => schedulerApi.createTask(projectId, payload), onSuccess: () => { setForm(createDefaultForm()); invalidateProjectQueries(); } });
+  const { data: tasks = [], isLoading } = useQuery({ queryKey: ['scheduled-tasks', projectId], queryFn: () => schedulerApi.getTasks(projectId), enabled: Boolean(projectId), refetchInterval: connected ? false : 15000 });
+  const { data: stats } = useQuery({ queryKey: ['scheduler-stats', projectId], queryFn: () => schedulerApi.getStats(projectId), enabled: Boolean(projectId), refetchInterval: connected ? false : 15000 });
+  const { data: systemHealth } = useQuery({ queryKey: ['system-health'], queryFn: () => schedulerApi.getSystemHealth(), refetchInterval: 15000 });
+  const { data: systemWorkers } = useQuery({ queryKey: ['system-workers'], queryFn: () => schedulerApi.getSystemWorkers(), refetchInterval: 15000 });
+  const { data: selectedExecution } = useQuery({ queryKey: ['task-execution', projectId, activeSelectedTask?.id], queryFn: () => schedulerApi.getTaskExecution(projectId, activeSelectedTask!.id), enabled: Boolean(projectId && activeSelectedTask?.id), refetchInterval: connected ? false : 10000 });
+  const { data: selectedLineage } = useQuery({ queryKey: ['task-lineage', projectId, activeSelectedTask?.id], queryFn: () => schedulerApi.getTaskLineage(projectId, activeSelectedTask!.id), enabled: Boolean(projectId && activeSelectedTask?.id), refetchInterval: connected ? false : 15000 });
+  const invalidateProjectQueries = useCallback(() => { queryClient.invalidateQueries({ queryKey: ['scheduled-tasks', projectId] }); queryClient.invalidateQueries({ queryKey: ['scheduler-stats', projectId] }); }, [projectId, queryClient]);
+  useEffect(() => {
+    if (!lastMessage || (lastMessage.project_id && lastMessage.project_id !== projectId)) return;
+    if (lastMessage.type.startsWith('task.') || lastMessage.type.startsWith('scheduler.')) {
+      invalidateProjectQueries();
+      if (lastMessage.task_id) {
+        queryClient.invalidateQueries({ queryKey: ['task-execution', projectId, lastMessage.task_id] });
+        queryClient.invalidateQueries({ queryKey: ['task-lineage', projectId, lastMessage.task_id] });
+      }
+    }
+  }, [invalidateProjectQueries, lastMessage, projectId, queryClient]);
+  const createTaskMutation = useMutation({ mutationFn: (payload: CreateScheduledTaskInput) => schedulerApi.createTask(projectId, payload), onSuccess: () => { setForm(createDefaultForm()); setFormError(null); invalidateProjectQueries(); } });
   const bulkImportMutation = useMutation({ mutationFn: (drafts: ValidBulkDraft[]) => schedulerApi.createTasksBulk(projectId, drafts), onSuccess: (result) => { const summaryParts: string[] = []; if (result.created.length) summaryParts.push(`已创建 ${result.created.length} 个任务`); if (result.failed.length) summaryParts.push(`${result.failed.length} 个任务创建失败`); setBulkSummary(summaryParts.length ? summaryParts.join(' ｜ ') : '没有创建任何任务'); setBulkErrorLines(result.failed); if (!result.failed.length) setBulkInput(''); invalidateProjectQueries(); } });
   const updateTaskMutation = useMutation({ mutationFn: ({ taskId, payload }: { taskId: string; payload: UpdateScheduledTaskInput }) => schedulerApi.updateTask(projectId, taskId, payload), onSuccess: (updatedTask) => { setSelectedTask(updatedTask); invalidateProjectQueries(); } });
   const dispatchTaskMutation = useMutation({ mutationFn: (taskId: string) => schedulerApi.dispatchTask(projectId, taskId), onSuccess: (updatedTask) => { setSelectedTask(updatedTask); invalidateProjectQueries(); queryClient.invalidateQueries({ queryKey: ['task-execution', projectId, updatedTask.id] }); } });
   const retryTaskMutation = useMutation({ mutationFn: (taskId: string) => schedulerApi.retryTask(projectId, taskId), onSuccess: (updatedTask) => { setSelectedTask(updatedTask); invalidateProjectQueries(); queryClient.invalidateQueries({ queryKey: ['task-execution', projectId, updatedTask.id] }); } });
   const recentUpdates = useMemo(() => stats?.recent_updates ?? [], [stats]);
   const runtimeHealth = useMemo(() => stats?.runtime_health ?? [], [stats]);
-  const filteredTasks = useMemo(() => tasks.filter((task) => { const matchesAgent = agentFilter === 'ALL' || task.owner_agent === agentFilter; const matchesStatus = statusFilter === 'ALL' || task.status === statusFilter; return matchesAgent && matchesStatus; }), [tasks, agentFilter, statusFilter]);
+  const waveOptions = useMemo(() => Array.from(new Set(tasks.map((task) => task.wave).filter((wave): wave is number => typeof wave === 'number'))).sort((a, b) => a - b), [tasks]);
+  const filteredTasks = useMemo(() => {
+    const dispatchSearch = dispatchRefFilter.trim().toLowerCase();
+    const filtered = tasks.filter((task) => {
+      const matchesAgent = agentFilter === 'ALL' || task.owner_agent === agentFilter;
+      const matchesStatus = statusFilter === 'ALL' || task.status === statusFilter;
+      const matchesWave = waveFilter === 'ALL' || task.wave === Number(waveFilter);
+      const matchesDispatchRef = !dispatchSearch || (task.dispatch_ref || '').toLowerCase().includes(dispatchSearch);
+      return matchesAgent && matchesStatus && matchesWave && matchesDispatchRef;
+    });
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'updated_asc') return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+      if (sortMode === 'priority_desc') return a.priority === b.priority ? new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime() : a.priority - b.priority;
+      if (sortMode === 'wave_asc') return (a.wave ?? 0) === (b.wave ?? 0) ? (a.topo_rank ?? 0) - (b.topo_rank ?? 0) : (a.wave ?? 0) - (b.wave ?? 0);
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [tasks, agentFilter, statusFilter, waveFilter, dispatchRefFilter, sortMode]);
   const bulkDrafts = useMemo(() => parseBulkTaskInput(bulkInput, { owner_agent: form.owner_agent, status: form.status ?? TaskStatus.BACKLOG, type: form.type ?? TaskType.INTEGRATION, priority: form.priority ?? 3 }), [bulkInput, form.owner_agent, form.priority, form.status, form.type]);
   const validBulkDrafts = useMemo(() => bulkDrafts.filter((draft): draft is ValidBulkDraft => Boolean(draft.payload)), [bulkDrafts]);
   const invalidBulkDrafts = useMemo(() => bulkDrafts.filter((draft) => !draft.payload), [bulkDrafts]);
-  const updateSelectedTask = (payload: UpdateScheduledTaskInput) => { if (!activeSelectedTask) return; setSelectedTask({ ...activeSelectedTask, ...payload }); updateTaskMutation.mutate({ taskId: activeSelectedTask.id, payload }); };
+  const updateSelectedTask = (payload: UpdateScheduledTaskInput) => {
+    if (!activeSelectedTask) return;
+    const validationError = validateTaskForm(payload);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setFormError(null);
+    setSelectedTask({ ...activeSelectedTask, ...payload });
+    updateTaskMutation.mutate({ taskId: activeSelectedTask.id, payload });
+  };
+  const handleCreateTask = () => {
+    const payload: CreateScheduledTaskInput = {
+      ...form,
+      title: form.title.trim(),
+      dispatch_ref: form.dispatch_ref?.trim() || undefined,
+      depends_on: splitLines(form.depends_on),
+      acceptance_criteria: splitLines(form.acceptance_criteria),
+    };
+    const validationError = validateTaskForm(payload);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setFormError(null);
+    createTaskMutation.mutate(payload);
+  };
   const handleBulkSubmit = () => { setBulkSummary(null); if (!validBulkDrafts.length) { setBulkErrorLines(invalidBulkDrafts.length ? invalidBulkDrafts : [{ line: 0, raw: '', error: '没有可导入的有效任务' }]); return; } bulkImportMutation.mutate(validBulkDrafts); };
 
   const renderTaskCard = (task: ScheduledTask) => (
@@ -130,6 +200,8 @@ const SchedulerBoard: React.FC = () => {
         {task.dispatch_status === DispatchStatus.RUNNING && !task.last_heartbeat_at && (
           <div className="mono" style={{ fontSize: '0.65rem', color: 'var(--accent-yellow)' }}>♥ 无心跳</div>
         )}
+        {task.dispatch_ref && <div className="mono" style={{ fontSize: '0.65rem', opacity: 0.7 }}>ref:{task.dispatch_ref}</div>}
+        {task.wave !== undefined && <div className="mono" style={{ fontSize: '0.65rem', opacity: 0.7 }}>W{task.wave}{task.topo_rank !== undefined ? `.${task.topo_rank}` : ''}</div>}
         <div className="mono" style={{ fontSize: '0.65rem', opacity: 0.6 }}>P{task.priority}</div>
         <div className="mono" style={{ fontSize: '0.65rem', opacity: 0.6 }}>{new Date(task.updated_at).toLocaleTimeString()}</div>
       </div>
@@ -176,20 +248,27 @@ const SchedulerBoard: React.FC = () => {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
             <input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="任务描述" style={inputStyle} />
-            <input type="number" min={1} max={5} value={form.priority} onChange={(event) => setForm({ ...form, priority: Number(event.target.value || 3) })} placeholder="优先级" style={inputStyle} />
-            <button onClick={() => createTaskMutation.mutate(form)} disabled={!projectId || !form.title.trim() || createTaskMutation.isPending} style={{ background: 'var(--accent-cyan)', color: '#071014', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>{createTaskMutation.isPending ? '创建中…' : '创建任务'}</button>
+            <input value={form.dispatch_ref || ''} onChange={(event) => setForm({ ...form, dispatch_ref: event.target.value.trim() })} placeholder="dispatch_ref" style={inputStyle} />
+            <input type="number" min={1} value={form.wave ?? 1} onChange={(event) => setForm({ ...form, wave: Number(event.target.value || 1) })} placeholder="Wave" style={inputStyle} />
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <textarea value={joinLines(form.depends_on)} onChange={(event) => setForm({ ...form, depends_on: splitLines(event.target.value) })} placeholder="依赖任务 ID，每行或逗号分隔" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+            <textarea value={joinLines(form.acceptance_criteria)} onChange={(event) => setForm({ ...form, acceptance_criteria: splitLines(event.target.value) })} placeholder="验收标准，每行一条" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+            <input type="number" min={1} max={5} value={form.priority} onChange={(event) => setForm({ ...form, priority: Number(event.target.value || 3) })} placeholder="优先级" style={inputStyle} />
+          </div>
+          {formError && <div style={{ marginBottom: '0.75rem', color: 'var(--accent-magenta)', fontSize: '0.78rem' }}>{formError}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
             <input value={form.next_action} onChange={(event) => setForm({ ...form, next_action: event.target.value })} placeholder="下一步行动" style={{ ...inputStyle, width: '100%' }} />
             <select value={form.dispatch_mode} onChange={(event) => setForm({ ...form, dispatch_mode: event.target.value as DispatchMode })} style={{ ...inputStyle, background: '#11131a' }}><option value={DispatchMode.AUTO}>{dispatchModeLabels[DispatchMode.AUTO]}</option><option value={DispatchMode.MANUAL}>{dispatchModeLabels[DispatchMode.MANUAL]}</option></select>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 8 }}><input type="checkbox" checked={form.auto_dispatch_enabled ?? true} onChange={(event) => setForm({ ...form, auto_dispatch_enabled: event.target.checked })} />自动派发</label>
+            <button onClick={handleCreateTask} disabled={!projectId || !form.title.trim() || createTaskMutation.isPending} style={{ background: 'var(--accent-cyan)', color: '#071014', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>{createTaskMutation.isPending ? '创建中…' : '创建任务'}</button>
           </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: '0.75rem' }}><input type="checkbox" checked={form.auto_dispatch_enabled ?? true} onChange={(event) => setForm({ ...form, auto_dispatch_enabled: event.target.checked })} />自动派发</label>
           {bulkImportOpen && (
             <div style={bulkPanelStyle}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                 <div>
                   <h3 style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>批量导入任务</h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>每行一个任务。格式：<span className="mono">标题 | 描述 | 下一步行动</span></p>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>每行一个任务。格式：<span className="mono">标题 | 描述 | 下一步行动</span>，并沿用上方默认 wave / dispatch_ref。</p>
                 </div>
                 <div className="mono" style={{ fontSize: '0.75rem', opacity: 0.7 }}>默认值：{form.owner_agent} / {formatLabel(statusLabels, form.status)} / {formatLabel(typeLabels, form.type)} / P{form.priority}</div>
               </div>
@@ -215,11 +294,14 @@ const SchedulerBoard: React.FC = () => {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         <div className="glass-card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}><Filter size={16} color="var(--accent-cyan)" /><h3 style={{ fontSize: '0.95rem' }}>看板筛选</h3></div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}><Filter size={16} color="var(--accent-cyan)" /><h3 style={{ fontSize: '0.95rem' }}>看板筛选</h3><span className="mono" style={{ marginLeft: 'auto', fontSize: '0.7rem', color: connected ? 'var(--accent-green)' : 'var(--text-secondary)' }}>{connected ? 'WS 实时' : '轮询备用'}</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr auto', gap: '0.75rem' }}>
             <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value as 'ALL' | Agent)} style={{ ...inputStyle, background: '#11131a' }}><option value="ALL">所有代理</option>{agentOptions.map((agent) => <option key={agent} value={agent}>{agent}</option>)}</select>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'ALL' | TaskStatus)} style={{ ...inputStyle, background: '#11131a' }}><option value="ALL">所有状态</option>{statusOptions.map((status) => <option key={status} value={status}>{formatLabel(statusLabels, status)}</option>)}</select>
-            <button onClick={() => { setAgentFilter('ALL'); setStatusFilter('ALL'); invalidateProjectQueries(); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0 1rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'white', cursor: 'pointer' }}><RefreshCcw size={14} /> 刷新</button>
+            <select value={waveFilter} onChange={(event) => setWaveFilter(event.target.value)} style={{ ...inputStyle, background: '#11131a' }}><option value="ALL">所有 Wave</option>{waveOptions.map((wave) => <option key={wave} value={String(wave)}>Wave {wave}</option>)}</select>
+            <input value={dispatchRefFilter} onChange={(event) => setDispatchRefFilter(event.target.value)} placeholder="dispatch_ref" style={inputStyle} />
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)} style={{ ...inputStyle, background: '#11131a' }}><option value="updated_desc">最近更新优先</option><option value="updated_asc">最早更新优先</option><option value="priority_desc">高优先级优先</option><option value="wave_asc">Wave / topo 顺序</option></select>
+            <button onClick={() => { setAgentFilter('ALL'); setStatusFilter('ALL'); setWaveFilter('ALL'); setDispatchRefFilter(''); invalidateProjectQueries(); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0 1rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'white', cursor: 'pointer' }}><RefreshCcw size={14} /> 刷新</button>
           </div>
         </div>
         <div className="glass-card">
@@ -304,6 +386,15 @@ const SchedulerBoard: React.FC = () => {
               <select value={activeSelectedTask.status} onChange={(event) => updateSelectedTask({ status: event.target.value as TaskStatus })} style={{ ...inputStyle, background: '#11131a' }}>{statusOptions.map((status) => <option key={status} value={status}>{formatLabel(statusLabels, status)}</option>)}</select>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>优先级</label>
               <input type="number" min={1} max={5} value={activeSelectedTask.priority} onChange={(event) => updateSelectedTask({ priority: Number(event.target.value || activeSelectedTask.priority) })} style={inputStyle} />
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>dispatch_ref</label>
+              <input value={activeSelectedTask.dispatch_ref || ''} onChange={(event) => setSelectedTask({ ...activeSelectedTask, dispatch_ref: event.target.value.trim() })} onBlur={(event) => updateSelectedTask({ dispatch_ref: event.target.value.trim() || undefined })} style={inputStyle} />
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Wave</label>
+              <input type="number" min={1} value={activeSelectedTask.wave ?? 1} onChange={(event) => updateSelectedTask({ wave: Number(event.target.value || 1) })} style={inputStyle} />
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>依赖任务</label>
+              <textarea value={joinLines(activeSelectedTask.depends_on)} onChange={(event) => setSelectedTask({ ...activeSelectedTask, depends_on: splitLines(event.target.value) })} onBlur={(event) => updateSelectedTask({ depends_on: splitLines(event.target.value) })} rows={3} style={{ ...inputStyle, width: '100%' }} />
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>验收标准</label>
+              <textarea value={joinLines(activeSelectedTask.acceptance_criteria)} onChange={(event) => setSelectedTask({ ...activeSelectedTask, acceptance_criteria: splitLines(event.target.value) })} onBlur={(event) => updateSelectedTask({ acceptance_criteria: splitLines(event.target.value) })} rows={3} style={{ ...inputStyle, width: '100%' }} />
+              {formError && <div style={{ color: 'var(--accent-magenta)', fontSize: '0.75rem' }}>{formError}</div>}
             </div>
           </div>
           <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>

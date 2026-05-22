@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
 import { useProject } from '../hooks/useProject';
-import { Agent, RuntimeStatus } from '../types/scheduler';
+import { Agent, DispatchStatus, RuntimeStatus, TaskStatus } from '../types/scheduler';
 
 const cardStyle: React.CSSProperties = {
   position: 'relative',
@@ -109,6 +109,23 @@ const OrchestratorHome: React.FC = () => {
   const activity = stats?.recent_updates ?? [];
   const completions = stats?.recent_done_tasks ?? [];
   const runtimes = stats?.runtime_health ?? [];
+  const mergeQueue = stats?.merge_queue_tasks ?? [];
+  const pendingItems = activity.filter((task) => (
+    task.status === TaskStatus.BLOCKED ||
+    task.dispatch_status === DispatchStatus.FAILED ||
+    task.dispatch_status === DispatchStatus.TRIAGE ||
+    task.dispatch_status === DispatchStatus.REVIEW_PENDING
+  ));
+  const activeDispatches = activity.filter((task) => (
+    task.dispatch_status === DispatchStatus.QUEUED ||
+    task.dispatch_status === DispatchStatus.DISPATCHED ||
+    task.dispatch_status === DispatchStatus.RUNNING
+  ));
+  const waveSnapshot = activeDispatches.length
+    ? `${activeDispatches[0].title}${activeDispatches.length > 1 ? ` +${activeDispatches.length - 1}` : ''}`
+    : stats?.queued_tasks
+      ? `${stats.queued_tasks} 个任务等待或执行中`
+      : '当前没有活跃 Wave';
 
   return (
     <div className="orchestrator-home">
@@ -125,7 +142,8 @@ const OrchestratorHome: React.FC = () => {
         </div>
         <div className="glass-card" style={{ padding: '0.85rem 1.5rem', borderLeft: '4px solid var(--accent-yellow)', minWidth: '320px' }}>
           <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>当前重点</p>
-          <p style={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.4 }}>{stats?.current_focus || '暂无焦点任务'}</p>
+          <p style={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.4, marginBottom: '0.5rem' }}>{stats?.current_focus || '暂无焦点任务'}</p>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Wave 快照：{waveSnapshot}</p>
         </div>
       </div>
 
@@ -133,7 +151,7 @@ const OrchestratorHome: React.FC = () => {
         <StatCard title="总任务数" value={stats?.total_tasks || 0} subValue="当前项目正在跟踪的任务总数" icon={<Layers size={24} />} color="cyan" />
         <StatCard title="活跃会话" value={stats?.active_sessions || 0} subValue="当前正在执行的会话数量" icon={<Terminal size={24} />} color="green" />
         <StatCard title="待调度" value={stats?.queued_tasks || 0} subValue="排队中、已派发和运行中的任务" icon={<Radar size={24} />} color="yellow" />
-        <StatCard title="派发失败" value={stats?.failed_dispatches || 0} subValue="最近派发失败的任务数" icon={<AlertCircle size={24} />} color="magenta" />
+        <StatCard title="合并队列" value={stats?.merge_queue_count || 0} subValue="已验证并等待串行合并的任务" icon={<CheckCircle size={24} />} color="magenta" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.15fr 1.15fr', gap: '1.5rem' }}>
@@ -151,7 +169,7 @@ const OrchestratorHome: React.FC = () => {
             <Wifi size={18} color="var(--accent-green)" />
             <h3 style={{ fontSize: '0.95rem' }}>运行时健康</h3>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem', marginBottom: '1.25rem' }}>
             {runtimes.map((runtime) => (
               <div key={runtime.owner_agent} style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(255,255,255,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.2rem' }}>
@@ -166,6 +184,23 @@ const OrchestratorHome: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.85rem' }}>
+            <Radar size={18} color="var(--accent-yellow)" />
+            <h3 style={{ fontSize: '0.95rem' }}>活跃派发 / Wave</h3>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+            {activeDispatches.length ? activeDispatches.slice(0, 3).map((task) => (
+              <div key={task.id} style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(255,255,255,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.2rem' }}>
+                  <strong style={{ fontSize: '0.84rem' }}>{task.title}</strong>
+                  <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--accent-yellow)' }}>{task.dispatch_status}</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{task.owner_agent} · {task.execution_runtime || 'runtime pending'}</div>
+              </div>
+            )) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>暂无活跃派发。</p>
+            )}
           </div>
         </div>
 
@@ -196,6 +231,52 @@ const OrchestratorHome: React.FC = () => {
         </div>
 
         <div className="glass-card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <AlertCircle size={20} color="var(--accent-magenta)" />
+            <h3 style={{ fontSize: '1.05rem' }}>待处理事项</h3>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            {isLoading ? (
+              <p>加载中…</p>
+            ) : pendingItems.length ? (
+              pendingItems.slice(0, 3).map((task) => (
+                <div key={task.id} style={listCardStyle}>
+                  <div style={{ color: 'var(--accent-magenta)' }}><AlertCircle size={16} /></div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: '0.86rem', fontWeight: 600 }}>{task.title}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{task.owner_agent} · {task.status} · {task.dispatch_status}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>{task.last_dispatch_error || task.block_reason || task.next_action || '需要人工确认下一步'}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>暂无阻塞、失败或待复核任务。</p>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <CheckCircle size={20} color="var(--accent-yellow)" />
+            <h3 style={{ fontSize: '1.05rem' }}>合并队列</h3>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            {isLoading ? (
+              <p>加载中…</p>
+            ) : mergeQueue.length ? (
+              mergeQueue.map((task) => (
+                <div key={task.id} style={listCardStyle}>
+                  <div style={{ color: 'var(--accent-yellow)' }}><CheckCircle size={16} /></div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: '0.86rem', fontWeight: 600 }}>{task.title}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{task.owner_agent} · {task.dispatch_ref || 'no dispatch'} · wave {task.wave ?? '-'}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>等待依赖完成后进入串行合并。</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>合并队列为空。</p>
+            )}
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
             <CheckCircle size={20} color="var(--accent-yellow)" />
             <h3 style={{ fontSize: '1.05rem' }}>最近完成</h3>

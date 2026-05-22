@@ -16,12 +16,12 @@
 
 ### Persistence（持久化）
 
-- [ ] **PERS-01**: tasks 表包含 id, dispatch_ref, state, retry_count, loop_iteration_count, transport, wave, topo_rank, workspace_path, artifact_path, last_error_reason, created_at, updated_at, terminal_at, card_json
-- [ ] **PERS-02**: events 表包含 event_id, task_id, event_type, from_state, to_state, timestamp, reason, attempt, transport, runner_id, details
-- [ ] **PERS-03**: waves 表包含 dispatch_ref, wave, sealed_at, created_at，(dispatch_ref, wave) 唯一约束
-- [ ] **PERS-04**: card_json TEXT NOT NULL 保存完整 Task Card JSON，业务字段默认从 card_json 读取
-- [ ] **PERS-05**: 事件写入和任务状态更新在同一 SQLite 事务内完成
-- [ ] **PERS-06**: SQLite 使用 WAL 模式 + busy_timeout 配置，支持多 goroutine 并发访问
+- [x] **PERS-01**: tasks 表包含 id, dispatch_ref, state, retry_count, loop_iteration_count, transport, wave, topo_rank, workspace_path, artifact_path, last_error_reason, created_at, updated_at, terminal_at, card_json
+- [x] **PERS-02**: events 表包含 event_id, task_id, event_type, from_state, to_state, timestamp, reason, attempt, transport, runner_id, details
+- [x] **PERS-03**: waves 表包含 dispatch_ref, wave, sealed_at, created_at，(dispatch_ref, wave) 唯一约束
+- [x] **PERS-04**: card_json TEXT NOT NULL 保存完整 Task Card JSON，业务字段默认从 card_json 读取
+- [x] **PERS-05**: 事件写入和任务状态更新在同一 SQLite 事务内完成
+- [x] **PERS-06**: SQLite 使用 WAL 模式 + busy_timeout 配置，支持多 goroutine 并发访问
 
 ### Wave Management（Wave 管理）
 
@@ -108,19 +108,19 @@
 
 ### HTTP API（HTTP 接口）
 
-- [ ] **API-01**: RESTful API 暴露任务 CRUD、Wave 操作、状态查询、事件查询
-- [ ] **API-02**: API 支持手动创建/编辑 Task Card（非 Connector 来源）
-- [ ] **API-03**: WebSocket 端点推送实时任务状态变更
+- [x] **API-01**: RESTful API 暴露任务 CRUD、Wave 操作、状态查询、事件查询
+- [x] **API-02**: API 支持手动创建/编辑 Task Card（非 Connector 来源）
+- [x] **API-03**: WebSocket 端点推送实时任务状态变更
 
 ### Web UI（Web 界面）
 
-- [ ] **UI-01**: 任务列表页，支持按状态/wave/dispatch_ref 筛选和排序
-- [ ] **UI-02**: 任务详情页，展示 Task Card 完整字段、状态历史、事件日志
-- [ ] **UI-03**: Wave 管理页面，展示各 wave 状态（open/sealed）、支持 seal 操作
-- [ ] **UI-04**: 任务创建/编辑表单，校验字段格式约束
-- [ ] **UI-05**: 全局状态仪表盘，展示任务统计（各状态计数）、活跃 dispatch_ref、合并队列状态
-- [ ] **UI-06**: 实时状态更新，任务状态变更通过 WebSocket 推送到前端
-- [ ] **UI-07**: 事件日志浏览器，按任务或 dispatch_ref 筛选查看完整事件链
+- [x] **UI-01**: 任务列表页，支持按状态/wave/dispatch_ref 筛选和排序
+- [x] **UI-02**: 任务详情页，展示 Task Card 完整字段、状态历史、事件日志
+- [x] **UI-03**: Wave 管理页面，展示各 wave 状态（open/sealed）、支持 seal 操作
+- [x] **UI-04**: 任务创建/编辑表单，校验字段格式约束
+- [x] **UI-05**: 全局状态仪表盘，展示任务统计（各状态计数）、活跃 dispatch_ref、合并队列状态
+- [x] **UI-06**: 实时状态更新，任务状态变更通过 WebSocket 推送到前端
+- [x] **UI-07**: 事件日志浏览器，按任务或 dispatch_ref 筛选查看完整事件链
 
 ## v2 Requirements
 
@@ -156,7 +156,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERS-01 ~ PERS-06 | Phase 1: Foundation | Pending |
+| PERS-01 ~ PERS-06 | Phase 1: Foundation | Complete |
 | CORE-01 ~ CORE-06 | Phase 2: Core Engine | Pending |
 | WAVE-01 ~ WAVE-05 | Phase 2: Core Engine | Pending |
 | DEPD-01 ~ DEPD-05 | Phase 2: Core Engine | Pending |
@@ -167,8 +167,8 @@
 | MERG-01 ~ MERG-06 | Phase 4: Integration | Pending |
 | AGNT-01 ~ AGNT-03 | Phase 4: Integration | Pending |
 | CONN-01 ~ CONN-03 | Phase 4: Integration | Pending |
-| API-01 ~ API-03 | Phase 5: Interface | Pending |
-| UI-01 ~ UI-07 | Phase 5: Interface | Pending |
+| API-01 ~ API-03 | Phase 5: Interface | Complete |
+| UI-01 ~ UI-07 | Phase 5: Interface | Complete |
 
 **Coverage:**
 - v1 requirements: 56 total

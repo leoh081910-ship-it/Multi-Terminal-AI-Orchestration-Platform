@@ -18,7 +18,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/mCP-DevOS/ai-orchestration-platform/ent"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/engine"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/knowledge"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/org"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/registry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/reverse"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/router"
 	"github.com/mCP-DevOS/ai-orchestration-platform/internal/store"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/telemetry"
+	"github.com/mCP-DevOS/ai-orchestration-platform/internal/template"
 	"github.com/rs/zerolog"
 )
 
@@ -31,10 +38,12 @@ type APIResponse struct {
 
 // Server provides the HTTP API server.
 type Server struct {
-	repo     *store.Repository
-	logger   zerolog.Logger
-	router   *chi.Mux
-	projects *compatProjectRegistry
+	repo         *store.Repository
+	logger       zerolog.Logger
+	router       *chi.Mux
+	orgSvc       *org.Service
+	knowledgeSvc *knowledge.Service
+	projects     *compatProjectRegistry
 
 	projectsMu          sync.RWMutex
 	projectConfigStore  *ProjectConfigStore
@@ -50,15 +59,41 @@ type Server struct {
 	autoDispatcherActive  bool
 	ttlCleanupActive      bool
 	executionReaperActive bool
+
+	// Phase 4: real-time event system
+	eventBus *EventBus
+	wsHub    *WSHub
+
+	// Phase 5: intelligent routing
+	taskRouter *router.Router
+
+	// Phase 6: template system
+	templateStore *template.Store
+
+	// multi-agent runner registry
+	runnerRegistry *registry.RunnerRegistry
+
+	// Phase 3 reverse execution
+	reverseExecutor *reverse.Executor
 }
 
 // New creates a new Server instance.
 func New(repo *store.Repository, logger zerolog.Logger) *Server {
+	eventBus := NewEventBus()
+	wsHub := NewWSHub(logger)
+	wsHub.ConnectEventBus(eventBus)
+	go wsHub.Run()
+
 	s := &Server{
-		repo:       repo,
-		logger:     logger,
-		router:     chi.NewRouter(),
-		webDistDir: filepath.FromSlash("web/dist"),
+		repo:          repo,
+		logger:        logger,
+		router:        chi.NewRouter(),
+		orgSvc:        org.NewService(repo.Client()),
+		knowledgeSvc:  knowledge.NewService(repo.Client()),
+		eventBus:      eventBus,
+		wsHub:         wsHub,
+		webDistDir:    filepath.FromSlash("web/dist"),
+		templateStore: template.NewStore(repo.DB()),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -73,10 +108,30 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) setupMiddleware() {
 	s.router.Use(s.cors)
 	s.router.Use(middleware.RequestID)
+	s.router.Use(s.injectRequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(30 * time.Second))
 	s.router.Use(s.requestLogger)
+}
+
+// EnableSentryMiddleware adds Sentry request tracking middleware.
+// Must be called before the server starts listening.
+func (s *Server) EnableSentryMiddleware() {
+	s.router.Use(telemetry.SentryMiddleware)
+}
+
+func (s *Server) injectRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rid := middleware.GetReqID(r.Context())
+		if rid == "" {
+			rid = telemetry.NewRequestID()
+		}
+		ctx := telemetry.WithRequestID(r.Context(), rid)
+		reqLogger := telemetry.LoggerWithContext(s.logger, ctx)
+		ctx = telemetry.ContextWithLogger(ctx, reqLogger)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 func (s *Server) requestLogger(next http.Handler) http.Handler {
@@ -84,12 +139,23 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
-		s.logger.Info().
+		duration := time.Since(start)
+		logger := telemetry.FromContext(r.Context())
+		if logger.GetLevel() == zerolog.Disabled {
+			logger = s.logger
+		}
+		logger.Info().
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
 			Int("status", ww.Status()).
-			Dur("duration", time.Since(start)).
+			Dur("duration", duration).
+			Str("remote_addr", r.RemoteAddr).
 			Msg("request")
+
+		routePath := metricsRoutePattern(r)
+		status := strconv.Itoa(ww.Status())
+		telemetry.HTTPRequestsTotal.WithLabelValues(r.Method, routePath, status).Inc()
+		telemetry.HTTPRequestDuration.WithLabelValues(r.Method, routePath).Observe(duration.Seconds())
 	})
 }
 
@@ -111,6 +177,18 @@ func (s *Server) setupRoutes() {
 
 			// PR-3: Recovery endpoint for stuck tasks
 			r.Post("/recovery/stuck-tasks", s.handleRecoverStuckTasks)
+
+			// Organization management
+			s.registerOrgRoutes(r)
+
+			// Goal decomposition
+			s.registerGoalRoutes(r)
+
+			// Knowledge space
+			s.registerKnowledgeRoutes(r)
+
+			// WebSocket
+			s.registerWSRoutes(r)
 		})
 
 		// Task endpoints
@@ -121,8 +199,11 @@ func (s *Server) setupRoutes() {
 			r.Route("/{id}", func(r chi.Router) {
 				r.Get("/", s.handleGetTask)
 				r.Put("/", s.handleUpdateTask)
+				r.Delete("/", s.handleDeleteTask)
+				r.Get("/events", s.handleListTaskEvents)
 				r.Post("/cancel", s.handleCancelTask)
 				r.Post("/retry", s.handleRetryTask)
+				r.Get("/agent-calls", s.handleGetTaskAgentCalls)
 			})
 		})
 
@@ -136,18 +217,35 @@ func (s *Server) setupRoutes() {
 	})
 
 	s.registerStaticWebRoutes()
+	s.registerSwaggerRoutes()
+	s.registerMetricsRoutes()
+	s.registerTemplateRoutes()
+
+	// Initialize template table if it doesn't exist
+	if err := s.initTemplateTable(context.Background()); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to init template table (non-fatal)")
+	}
 }
 
 func (s *Server) registerCompatProjectRoutes(r chi.Router) {
 	r.Route("/scheduler", func(r chi.Router) {
 		r.Get("/tasks", s.handleCompatListSchedulerTasks)
 		r.Post("/tasks", s.handleCompatCreateSchedulerTask)
+		r.Post("/tasks/bulk", s.handleCompatBulkCreateSchedulerTasks)
+		r.Get("/tasks/{id}", s.handleCompatGetSchedulerTask)
 		r.Patch("/tasks/{id}", s.handleCompatUpdateSchedulerTask)
+		r.Delete("/tasks/{id}", s.handleCompatDeleteSchedulerTask)
 		r.Post("/tasks/{id}/dispatch", s.handleCompatDispatchSchedulerTask)
 		r.Post("/tasks/{id}/retry", s.handleCompatRetrySchedulerTask)
 		r.Get("/tasks/{id}/execution", s.handleCompatGetTaskExecution)
 		r.Get("/tasks/{id}/lineage", s.handleCompatGetTaskLineage)
+		r.Get("/tasks/{id}/events", s.handleCompatListTaskEvents)
 		r.Post("/tasks/{id}/triage", s.handleCompatManualTriage)
+		r.Post("/waves", s.handleCompatCreateWave)
+		r.Get("/waves", s.handleCompatListWaves)
+		r.Get("/waves/{dispatchRef}/{wave}", s.handleCompatGetWave)
+		r.Post("/waves/{dispatchRef}/{wave}/seal", s.handleCompatSealWave)
+		r.Get("/events", s.handleCompatListProjectEvents)
 		r.Get("/executions", s.handleCompatListExecutions)
 		r.Get("/runtimes", s.handleCompatListRuntimes)
 		r.Get("/failure-policies", s.handleCompatGetFailurePolicies)
@@ -331,6 +429,73 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	deleted, err := s.repo.DeleteTask(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to delete task")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to delete task",
+		})
+		return
+	}
+	if !deleted {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "task not found",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"id":      id,
+			"deleted": true,
+		},
+	})
+}
+
+func (s *Server) handleListTaskEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to get task for event list")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to get task events",
+		})
+		return
+	}
+	if task == nil {
+		s.writeJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "task not found",
+		})
+		return
+	}
+
+	events, err := s.repo.ListEventsByTaskID(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to list task events")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to get task events",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    events,
+	})
+}
+
 func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -455,6 +620,26 @@ func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
 			"id":     id,
 			"status": engine.StateRetryWaiting,
 		},
+	})
+}
+
+func (s *Server) handleGetTaskAgentCalls(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	calls, err := s.repo.ListAgentCallsByTask(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("task_id", id).Msg("failed to list agent calls")
+		s.writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   "failed to list agent calls",
+		})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    calls,
 	})
 }
 
@@ -643,6 +828,33 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 // --- PRD-DA-001 Coordination Worker Management ---
 
+// SetTaskRouter sets the intelligent task router.
+func (s *Server) SetTaskRouter(r *router.Router) {
+	s.taskRouter = r
+}
+
+// SetRunnerRegistry injects the multi-agent Runner registry.
+// The registry should be initialized before calling this, after DB setup and
+// before starting background workers (heartbeat loop starts here).
+func (s *Server) SetRunnerRegistry(r *registry.RunnerRegistry) {
+	s.runnerRegistry = r
+}
+
+// RunnerRegistry returns the Runner registry if configured.
+func (s *Server) RunnerRegistry() *registry.RunnerRegistry {
+	return s.runnerRegistry
+}
+
+// SetReverseExecutor injects the reverse engineering executor.
+func (s *Server) SetReverseExecutor(executor *reverse.Executor) {
+	s.reverseExecutor = executor
+}
+
+// ReverseExecutor returns the reverse engineering executor if configured.
+func (s *Server) ReverseExecutor() *reverse.Executor {
+	return s.reverseExecutor
+}
+
 // SetCoordinationWorkers sets the coordination background workers.
 func (s *Server) SetCoordinationWorkers(orchestrator *FailureOrchestrator, retryW *RetryWorker, reviewW *ReviewWorker) {
 	s.failureOrchestrator = orchestrator
@@ -827,7 +1039,7 @@ func (s *Server) handleCompatManualTriage(w http.ResponseWriter, r *http.Request
 		}
 		syncCompatPayloadState(payload, engine.StateTriage)
 		payload["coordination_stage"] = "triage"
-		_ = s.persistCompatPayload(ctx, id, payload)
+		s.persistCompatPayloadLogged(ctx, id, payload)
 	}
 
 	updatedTask, _ := s.repo.GetTaskByID(ctx, id)
@@ -938,7 +1150,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		payload["dispatch_status"] = "failed"
 		payload["status"] = "ready"
 		payload["execution_session_id"] = nil
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateRetryWaiting
@@ -965,7 +1177,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 			payload["dispatch_status"] = "completed"
 			payload["status"] = "verified"
 			payload["review_decision"] = firstCompatNonEmpty(readString(payload, "review_decision"), "approved")
-			_ = s.persistCompatPayload(ctx, taskID, payload)
+			s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 			result["status"] = "recovered"
 			result["new_state"] = engine.StateVerified
@@ -982,7 +1194,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		payload["coordination_stage"] = "recovery"
 		payload["dispatch_status"] = "failed"
 		payload["status"] = "ready"
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateRetryWaiting
@@ -992,7 +1204,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		// Already in retry_waiting but may be stuck by failed children
 		retiredCount := s.retireFailedChildren(ctx, taskID)
 		payload["auto_repair_count"] = 0
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateRetryWaiting
@@ -1011,7 +1223,7 @@ func (s *Server) recoverStuckTask(ctx context.Context, taskID, reason string) ma
 		payload["dispatch_status"] = "completed"
 		payload["status"] = "verified"
 		payload["execution_session_id"] = nil
-		_ = s.persistCompatPayload(ctx, taskID, payload)
+		s.persistCompatPayloadLogged(ctx, taskID, payload)
 
 		result["status"] = "recovered"
 		result["new_state"] = engine.StateVerified
@@ -1067,7 +1279,7 @@ func (s *Server) retireFailedChildren(ctx context.Context, parentTaskID string) 
 			payload["dispatch_status"] = "completed"
 			payload["status"] = "done"
 			payload["coordination_stage"] = "retired"
-			_ = s.persistCompatPayload(ctx, t.ID, payload)
+			s.persistCompatPayloadLogged(ctx, t.ID, payload)
 			retired++
 		}
 	}

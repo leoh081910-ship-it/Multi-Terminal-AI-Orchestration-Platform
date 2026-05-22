@@ -1,6 +1,7 @@
 ﻿import client from './client';
 import { Agent, DispatchStatus } from '../types/scheduler';
 import type {
+  AgentCallRecord,
   AgentConfig,
   BulkImportResult,
   BulkImportTaskDraft,
@@ -9,6 +10,8 @@ import type {
   FailurePolicyConfig,
   RuntimeSummary,
   ScheduledTask,
+  SchedulerEvent,
+  SchedulerWave,
   SystemHealth,
   SystemWorkersResponse,
   TaskExecution,
@@ -16,9 +19,17 @@ import type {
   UpdateScheduledTaskInput,
 } from '../types/scheduler';
 
+type SchedulerEventFilters = {
+  taskId?: string;
+  dispatchRef?: string;
+};
+
 interface BackendScheduledTask {
   project_id?: string;
   task_id: string;
+  dispatch_ref?: string;
+  wave?: number;
+  topo_rank?: number;
   title: string;
   owner_agent: ScheduledTask['owner_agent'];
   status: ScheduledTask['status'];
@@ -29,6 +40,13 @@ interface BackendScheduledTask {
   input_artifacts?: string[];
   output_artifacts?: string[];
   acceptance_criteria?: string[];
+  source?: string;
+  source_ref?: string;
+  context?: unknown;
+  files_to_read?: string[];
+  files_to_modify?: string[];
+  relations?: ScheduledTask['relations'];
+  card_json?: string;
   blocked_reason?: string;
   result_summary?: string;
   next_action?: string;
@@ -70,6 +88,8 @@ interface BoardSummaryResponse {
   recent_updates: BackendScheduledTask[];
   recent_done_tasks: BackendScheduledTask[];
   current_focus: BackendScheduledTask[];
+  merge_queue_count: number;
+  merge_queue_tasks: BackendScheduledTask[];
 }
 
 interface AgentSummaryResponse {
@@ -88,9 +108,19 @@ interface ExecutionResponse {
   executions: TaskExecution[];
 }
 
+interface SchedulerTaskListResponse {
+  items: BackendScheduledTask[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 const mapTask = (task: BackendScheduledTask): ScheduledTask => ({
   project_id: task.project_id,
   id: task.task_id,
+  dispatch_ref: task.dispatch_ref,
+  wave: task.wave,
+  topo_rank: task.topo_rank,
   title: task.title,
   owner_agent: task.owner_agent,
   status: task.status,
@@ -101,6 +131,13 @@ const mapTask = (task: BackendScheduledTask): ScheduledTask => ({
   input_artifacts: task.input_artifacts,
   output_artifacts: task.output_artifacts,
   acceptance_criteria: task.acceptance_criteria,
+  source: task.source,
+  source_ref: task.source_ref,
+  context: task.context,
+  files_to_read: task.files_to_read,
+  files_to_modify: task.files_to_modify,
+  relations: task.relations,
+  card_json: task.card_json,
   block_reason: task.blocked_reason,
   result_summary: task.result_summary,
   next_action: task.next_action,
@@ -144,8 +181,14 @@ const projectBase = (projectId: string) => `/projects/${encodeURIComponent(proje
 
 export const schedulerApi = {
   getTasks: async (projectId: string): Promise<ScheduledTask[]> => {
-    const response = await client.get<BackendScheduledTask[]>(`${projectBase(projectId)}/scheduler/tasks`);
-    return response.data.map(mapTask);
+    const response = await client.get<SchedulerTaskListResponse | BackendScheduledTask[]>(`${projectBase(projectId)}/scheduler/tasks`);
+    const tasks = Array.isArray(response.data) ? response.data : response.data.items;
+    return tasks.map(mapTask);
+  },
+
+  getTask: async (projectId: string, taskId: string): Promise<ScheduledTask> => {
+    const response = await client.get<BackendScheduledTask>(`${projectBase(projectId)}/scheduler/tasks/${taskId}`);
+    return mapTask(response.data);
   },
 
   createTask: async (projectId: string, payload: CreateScheduledTaskInput): Promise<ScheduledTask> => {
@@ -188,6 +231,10 @@ export const schedulerApi = {
     return mapTask(response.data);
   },
 
+  deleteTask: async (projectId: string, taskId: string): Promise<void> => {
+    await client.delete(`${projectBase(projectId)}/scheduler/tasks/${taskId}`);
+  },
+
   dispatchTask: async (projectId: string, taskId: string): Promise<ScheduledTask> => {
     const response = await client.post<BackendScheduledTask>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/dispatch`);
     return mapTask(response.data);
@@ -198,8 +245,53 @@ export const schedulerApi = {
     return mapTask(response.data);
   },
 
-  getTaskExecution: async (projectId: string, taskId: string): Promise<TaskExecution> => {
-    const response = await client.get<TaskExecution>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/execution`);
+  getTaskExecution: async (projectId: string, taskId: string): Promise<TaskExecution | null> => {
+    try {
+      const response = await client.get<TaskExecution>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/execution`);
+      return response.data;
+    } catch (error: unknown) {
+      const status = typeof error === 'object' && error !== null && 'response' in error
+        ? (error as { response?: { status?: number } }).response?.status
+        : undefined;
+      if (status === 404) return null;
+      throw error;
+    }
+  },
+
+  listWaves: async (projectId: string): Promise<SchedulerWave[]> => {
+    const response = await client.get<SchedulerWave[]>(`${projectBase(projectId)}/scheduler/waves`);
+    return response.data;
+  },
+
+  getWave: async (projectId: string, dispatchRef: string, wave: number): Promise<SchedulerWave> => {
+    const response = await client.get<SchedulerWave>(
+      `${projectBase(projectId)}/scheduler/waves/${encodeURIComponent(dispatchRef)}/${wave}`,
+    );
+    return response.data;
+  },
+
+  sealWave: async (projectId: string, dispatchRef: string, wave: number): Promise<SchedulerWave> => {
+    const response = await client.post<SchedulerWave>(
+      `${projectBase(projectId)}/scheduler/waves/${encodeURIComponent(dispatchRef)}/${wave}/seal`,
+    );
+    return response.data;
+  },
+
+  getTaskEvents: async (projectId: string, taskId: string): Promise<SchedulerEvent[]> => {
+    const response = await client.get<SchedulerEvent[]>(`${projectBase(projectId)}/scheduler/tasks/${taskId}/events`);
+    return response.data;
+  },
+
+  getDispatchEvents: async (projectId: string, dispatchRef: string): Promise<SchedulerEvent[]> => {
+    return schedulerApi.getEvents(projectId, { dispatchRef });
+  },
+
+  getEvents: async (projectId: string, filters: SchedulerEventFilters = {}): Promise<SchedulerEvent[]> => {
+    const params: Record<string, string> = {};
+    if (filters.taskId) params.task_id = filters.taskId;
+    if (filters.dispatchRef) params.dispatch_ref = filters.dispatchRef;
+
+    const response = await client.get<SchedulerEvent[]>(`${projectBase(projectId)}/scheduler/events`, { params });
     return response.data;
   },
 
@@ -254,6 +346,8 @@ export const schedulerApi = {
       active_sessions: runtimes.reduce((sum, runtime) => sum + runtime.active_sessions, 0),
       failed_dispatches: allRecentUpdates.filter((task) => task.dispatch_status === DispatchStatus.FAILED).length,
       queued_tasks: executions.filter((execution) => queuedStatuses.includes(execution.status)).length,
+      merge_queue_count: board.merge_queue_count,
+      merge_queue_tasks: board.merge_queue_tasks.map(mapTask),
     };
   },
 
@@ -295,5 +389,12 @@ export const schedulerApi = {
   getSystemWorkers: async (): Promise<SystemWorkersResponse> => {
     const response = await client.get<{ success: boolean; data: SystemWorkersResponse }>('/system/workers');
     return response.data.data;
+  },
+
+  // Agent call history (observability)
+
+  getAgentCalls: async (taskId: string): Promise<AgentCallRecord[]> => {
+    const response = await client.get<{ success: boolean; data: AgentCallRecord[] }>(`/tasks/${taskId}/agent-calls`);
+    return response.data.data || [];
   },
 };
