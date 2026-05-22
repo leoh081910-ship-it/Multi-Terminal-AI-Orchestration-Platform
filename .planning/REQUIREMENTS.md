@@ -7,12 +7,12 @@
 
 ### Core Model（核心模型）
 
-- [ ] **CORE-01**: 平台为每次 discoverTasks() 调用自动生成唯一 dispatch_ref，同次调用返回的所有任务共享该值
-- [ ] **CORE-02**: task_id 仅允许 `[a-z0-9_-]`，长度 1-16；dispatch_ref 仅允许 `[a-z0-9_-]`，长度 1-32
-- [ ] **CORE-03**: Task Card 包含最小字段集（id, dispatch_ref, source, source_ref, type, objective, context, files_to_read, files_to_modify, acceptance_criteria, relations, wave, priority）
-- [ ] **CORE-04**: files_to_modify 作为写入白名单支持 glob 模式匹配
-- [ ] **CORE-05**: source_ref 保留来源系统原始标识，与平台内部 dispatch_ref 语义分离
-- [ ] **CORE-06**: relations[] 中每条边包含 task_id、type（depends_on/conflicts_with）、reason
+- [x] **CORE-01**: 平台为每次 discoverTasks() 调用自动生成唯一 dispatch_ref，同次调用返回的所有任务共享该值
+- [ ] **CORE-02**: task_id 仅允许 `[a-z0-9_-]`，长度 1-16；dispatch_ref 仅允许 `[a-z0-9_-]`，长度 1-32 — *部分实现：仅检查非空，缺正则/长度校验*
+- [x] **CORE-03**: Task Card 包含最小字段集（id, dispatch_ref, source, source_ref, type, objective, context, files_to_read, files_to_modify, acceptance_criteria, relations, wave, priority）
+- [x] **CORE-04**: files_to_modify 作为写入白名单支持 glob 模式匹配
+- [x] **CORE-05**: source_ref 保留来源系统原始标识，与平台内部 dispatch_ref 语义分离
+- [x] **CORE-06**: relations[] 中每条边包含 task_id、type（depends_on/conflicts_with）、reason
 
 ### Persistence（持久化）
 
@@ -25,86 +25,86 @@
 
 ### Wave Management（Wave 管理）
 
-- [ ] **WAVE-01**: 任务入队时平台自动 upert 对应的 (dispatch_ref, wave) 到 waves 表
-- [ ] **WAVE-02**: sealed_at = null 表示 wave 未 seal，该 wave 下任务不得进入 routed
-- [ ] **WAVE-03**: Connector 以 (dispatch_ref, wave) 为单位提交任务，或显式调用 sealWave()
-- [ ] **WAVE-04**: 已 seal 的 wave 拒绝追加任务，reason = "wave_already_sealed"
-- [ ] **WAVE-05**: tasks.wave 必须始终对应一条同 (dispatch_ref, wave) 的 waves 记录
+- [x] **WAVE-01**: 任务入队时平台自动 upert 对应的 (dispatch_ref, wave) 到 waves 表
+- [x] **WAVE-02**: sealed_at = null 表示 wave 未 seal，该 wave 下任务不得进入 routed
+- [x] **WAVE-03**: Connector 以 (dispatch_ref, wave) 为单位提交任务，或显式调用 sealWave()
+- [x] **WAVE-04**: 已 seal 的 wave 拒绝追加任务，reason = "wave_already_sealed"
+- [x] **WAVE-05**: tasks.wave 必须始终对应一条同 (dispatch_ref, wave) 的 waves 记录
 
 ### Dependency & Conflict（依赖与冲突）
 
-- [ ] **DEPD-01**: topo_rank 只基于 depends_on 计算，无依赖任务默认 topo_rank = 0
-- [ ] **DEPD-02**: depends_on 只能指向同 wave 或更早 wave，指向更晚 wave 的依赖入队拒绝，reason = "invalid_dependency"
-- [ ] **DEPD-03**: conflicts_with 只在同 wave 内计算
-- [ ] **DEPD-04**: 若两任务间已存在 depends_on，Router 不再生成 conflicts_with
-- [ ] **DEPD-05**: conflicts_with 只影响路由与批次切分，不改变合并排序
+- [x] **DEPD-01**: topo_rank 只基于 depends_on 计算，无依赖任务默认 topo_rank = 0
+- [x] **DEPD-02**: depends_on 只能指向同 wave 或更早 wave，指向更晚 wave 的依赖入队拒绝，reason = "invalid_dependency"
+- [x] **DEPD-03**: conflicts_with 只在同 wave 内计算
+- [x] **DEPD-04**: 若两任务间已存在 depends_on，Router 不再生成 conflicts_with
+- [ ] **DEPD-05**: conflicts_with 只影响路由与批次切分，不改变合并排序 — *未验证：无独立合并排序代码对比*
 
 ### State Machine（状态机）
 
-- [ ] **STAT-01**: 实现 13 态状态机（queued, routed, workspace_prepared, running, patch_ready, verified, merged, done, retry_waiting, verify_failed, apply_failed, failed）
-- [ ] **STAT-02**: 状态转换严格遵守 PRD 定义的有向图，非法转换被拒绝
-- [ ] **STAT-03**: done 和 failed 是唯一终态，终态任务拒绝所有迟到写入，只记录警告
-- [ ] **STAT-04**: merged → done 是即时转换，无额外 finalize
-- [ ] **STAT-05**: TTL 从 terminal_at 起算，不依赖 updated_at
-- [ ] **STAT-06**: 前置任务 failed/apply_failed 时，后置非终态任务立即进 failed，reason = "dependency_failed"
+- [ ] **STAT-01**: 实现 13 态状态机（queued, routed, workspace_prepared, running, patch_ready, verified, merged, done, retry_waiting, verify_failed, apply_failed, failed） — *已实现 17 态（超集含 triage, review_pending, blocked 等），含 PRD 要求的全部 13 态*
+- [x] **STAT-02**: 状态转换严格遵守 PRD 定义的有向图，非法转换被拒绝
+- [ ] **STAT-03**: done 和 failed 是唯一终态，终态任务拒绝所有迟到写入，只记录警告 — *部分实现：done 是终态，failed 被设计为可恢复；无迟到写入警告逻辑*
+- [x] **STAT-04**: merged → done 是即时转换，无额外 finalize
+- [x] **STAT-05**: TTL 从 terminal_at 起算，不依赖 updated_at
+- [x] **STAT-06**: 前置任务 failed/apply_failed 时，后置非终态任务立即进 failed，reason = "dependency_failed"
 
 ### Transport（传输）
 
-- [ ] **TRAN-01**: CLI Transport 在 git worktree 中执行任务，按 files_to_modify 白名单 glob 抽取工件到 artifacts/{task_id}/
-- [ ] **TRAN-02**: CLI 白名单匹配为空时 running → retry_waiting，reason = "empty_artifact_match"
-- [ ] **TRAN-03**: CLI 白名单外新增文件只记录警告，不抽取，不单独判失败
-- [ ] **TRAN-04**: API Transport 返回完整文件工件，写入 artifacts/{task_id}/ 并同步到 API 隔离目录
-- [ ] **TRAN-05**: API workspace 同步失败时 running → retry_waiting，reason = "workspace_write_failed"
-- [ ] **TRAN-06**: 从 patch_ready 开始 CLI 和 API 走同一条后续流程
-- [ ] **TRAN-07**: 所有 transport 检查根路径长度、空格、中文字符；CLI 额外检查符号链接权限和 worktree 路径长度
+- [x] **TRAN-01**: CLI Transport 在 git worktree 中执行任务，按 files_to_modify 白名单 glob 抽取工件到 artifacts/{task_id}/
+- [x] **TRAN-02**: CLI 白名单匹配为空时 running → retry_waiting，reason = "empty_artifact_match"
+- [ ] **TRAN-03**: CLI 白名单外新增文件只记录警告，不抽取，不单独判失败 — *未实现：无白名单外文件警告逻辑*
+- [ ] **TRAN-04**: API Transport 返回完整文件工件，写入 artifacts/{task_id}/ 并同步到 API 隔离目录 — *部分实现：返回内存中工件，无磁盘写入和隔离目录同步*
+- [ ] **TRAN-05**: API workspace 同步失败时 running → retry_waiting，reason = "workspace_write_failed" — *未实现：API transport 不产生此原因码*
+- [x] **TRAN-06**: 从 patch_ready 开始 CLI 和 API 走同一条后续流程
+- [ ] **TRAN-07**: 所有 transport 检查根路径长度、空格、中文字符；CLI 额外检查符号链接权限和 worktree 路径长度 — *部分实现：仅检查路径长度 260，无空格/中文/符号链接检查*
 
 ### Merge Queue（合并队列）
 
-- [ ] **MERG-01**: 任务进入 verified 后立即加入全局合并队列
-- [ ] **MERG-02**: 合并队列单消费者串行处理
-- [ ] **MERG-03**: 只消费依赖已全部 done 的 verified 任务
-- [ ] **MERG-04**: 排序为 topo_rank 升序 + created_at 升序
-- [ ] **MERG-05**: 合并操作为工件复制到主 checkout + git add + git commit
-- [ ] **MERG-06**: apply_failed 只能人工处理，不自动重试
+- [x] **MERG-01**: 任务进入 verified 后立即加入全局合并队列
+- [x] **MERG-02**: 合并队列单消费者串行处理
+- [x] **MERG-03**: 只消费依赖已全部 done 的 verified 任务
+- [x] **MERG-04**: 排序为 topo_rank 升序 + created_at 升序
+- [x] **MERG-05**: 合并操作为工件复制到主 checkout + git add + git commit
+- [x] **MERG-06**: apply_failed 只能人工处理，不自动重试
 
 ### Retry & Recovery（重试与恢复）
 
-- [ ] **RETR-01**: retry_count 跨所有主动失败累计，默认 max_retries = 2
-- [ ] **RETR-02**: 退避为 30 秒、60 秒，从 retry_waiting 事件的 timestamp 起算
-- [ ] **RETR-03**: 恢复时复用原始时间戳，不重置计时
-- [ ] **RETR-04**: attempt 等于写事件时的当前 retry_count
-- [ ] **RETR-05**: 消耗 retry_count 的原因码：execution_failure, workspace_write_failed, empty_artifact_match, deterministic_check_failed, test_command_failed, reverse_loop_exhausted, reverse_env_unavailable
-- [ ] **RETR-06**: 不消耗 retry_count：process_resume, dependency_failed
-- [ ] **RETR-07**: 恢复时重新触发依赖失败传播检查
+- [x] **RETR-01**: retry_count 跨所有主动失败累计，默认 max_retries = 2
+- [x] **RETR-02**: 退避为 30 秒、60 秒，从 retry_waiting 事件的 timestamp 起算
+- [x] **RETR-03**: 恢复时复用原始时间戳，不重置计时
+- [x] **RETR-04**: attempt 等于写事件时的当前 retry_count
+- [x] **RETR-05**: 消耗 retry_count 的原因码：execution_failure, workspace_write_failed, empty_artifact_match, deterministic_check_failed, test_command_failed, reverse_loop_exhausted, reverse_env_unavailable
+- [x] **RETR-06**: 不消耗 retry_count：process_resume, dependency_failed
+- [x] **RETR-07**: 恢复时重新触发依赖失败传播检查
 
 ### Reverse Engineering（逆向专项）
 
-- [ ] **REVR-01**: reverse_static_c_rebuild 任务类型，context 必须包含 target_so_path, ida_mcp_endpoint, frida_hook_spec, oracle_input_spec, oracle_output_ref, analysis_state_md_path, final_artifact_path
-- [ ] **REVR-02**: 缺少逆向必要字段时任务不得进入 routed
-- [ ] **REVR-03**: 运行中固定循环：IDA 静态分析 → 生成/修正 .c → 编译 → 运行采集 static_output → Frida 黑盒采集 frida_oracle_output → Diff → match_rate
-- [ ] **REVR-04**: 单步失败（compile_failed, static_run_failed, frida_oracle_failed, diff_failed, oracle_mismatch）为内部自重试，不触发外层状态迁移，不消耗 retry_count
-- [ ] **REVR-05**: 内部失败通过 events 表记录，event_type = "loop_iteration"，from_state = "running"，to_state = "running"
-- [ ] **REVR-06**: 每完成一轮完整循环 tasks.loop_iteration_count 加 1
-- [ ] **REVR-07**: loop_iteration_count 超过 max_loop_iterations（默认 50）或不可恢复环境错误时触发 running → retry_waiting
-- [ ] **REVR-08**: 外层重试重新执行时 loop_iteration_count 重置为 0
-- [ ] **REVR-09**: match_rate = 100% 且最终工件生成后才允许 running → patch_ready
-- [ ] **REVR-10**: 进程恢复时 loop_iteration_count 保留不重置，但从循环第 1 步重新开始
-- [ ] **REVR-11**: 恢复后第一步为读取 analysis_state_md_path
-- [ ] **REVR-12**: 逆向工件写入 artifacts/{task_id}/reverse/（final.c, static_output.json, frida_oracle_output.json, diff_report.json）
-- [ ] **REVR-13**: diff_report.json 包含 match_rate, mismatch_cases, normalization_rules
-- [ ] **REVR-14**: 验收额外检查：final.c 独立可编译、包含所有依赖结构体定义、不含未解析偏移量
+- [x] **REVR-01**: reverse_static_c_rebuild 任务类型，context 必须包含 target_so_path, ida_mcp_endpoint, frida_hook_spec, oracle_input_spec, oracle_output_ref, analysis_state_md_path, final_artifact_path
+- [ ] **REVR-02**: 缺少逆向必要字段时任务不得进入 routed — *部分实现：Validate() 在执行时检查，非路由时门控*
+- [x] **REVR-03**: 运行中固定循环：IDA 静态分析 → 生成/修正 .c → 编译 → 运行采集 static_output → Frida 黑盒采集 frida_oracle_output → Diff → match_rate
+- [x] **REVR-04**: 单步失败（compile_failed, static_run_failed, frida_oracle_failed, diff_failed, oracle_mismatch）为内部自重试，不触发外层状态迁移，不消耗 retry_count
+- [x] **REVR-05**: 内部失败通过 events 表记录，event_type = "loop_iteration"，from_state = "running"，to_state = "running"
+- [x] **REVR-06**: 每完成一轮完整循环 tasks.loop_iteration_count 加 1
+- [x] **REVR-07**: loop_iteration_count 超过 max_loop_iterations（默认 50）或不可恢复环境错误时触发 running → retry_waiting
+- [ ] **REVR-08**: 外层重试重新执行时 loop_iteration_count 重置为 0 — *未实现：未找到重置逻辑*
+- [ ] **REVR-09**: match_rate = 100% 且最终工件生成后才允许 running → patch_ready — *部分实现：100% match_rate 检查存在，但 reverse 成功后走标准完成路径而非 patch_ready*
+- [x] **REVR-10**: 进程恢复时 loop_iteration_count 保留不重置，但从循环第 1 步重新开始
+- [x] **REVR-11**: 恢复后第一步为读取 analysis_state_md_path
+- [x] **REVR-12**: 逆向工件写入 artifacts/{task_id}/reverse/（final.c, static_output.json, frida_oracle_output.json, diff_report.json）
+- [x] **REVR-13**: diff_report.json 包含 match_rate, mismatch_cases, normalization_rules
+- [ ] **REVR-14**: 验收额外检查：final.c 独立可编译、包含所有依赖结构体定义、不含未解析偏移量 — *部分实现：validateFinalC 检查占位符和 int main，未验证结构体完整性和偏移量*
 
 ### Agent Interface（代理接口）
 
-- [ ] **AGNT-01**: 抽象 Runner 接口定义任务执行契约（输入 Task Card + workspace → 输出执行结果）
-- [ ] **AGNT-02**: Claude Code CLI 作为首个 Runner 实现，通过 git worktree 隔离执行
-- [ ] **AGNT-03**: Runner 接口支持健康检查、取消信号、进度上报
+- [x] **AGNT-01**: 抽象 Runner 接口定义任务执行契约（输入 Task Card + workspace → 输出执行结果）
+- [x] **AGNT-02**: Claude Code CLI 作为首个 Runner 实现，通过 git worktree 隔离执行
+- [ ] **AGNT-03**: Runner 接口支持健康检查、取消信号、进度上报 — *部分实现：HealthCheck 和 Cancel 存在（Cancel 为 no-op），无进度上报接口*
 
 ### Connector（连接器）
 
-- [ ] **CONN-01**: Connector 接口定义 discoverTasks()、hydrateContext()、ackResult()、writeBackArtifacts()
-- [ ] **CONN-02**: GSD Connector 从 PLAN 生成 Task Card，填充 wave、depends_on，补全新文件路径到 files_to_modify
-- [ ] **CONN-03**: GSD Connector 在结果合并后回写 SUMMARY/STATE/ROADMAP/VERIFICATION
+- [x] **CONN-01**: Connector 接口定义 discoverTasks()、hydrateContext()、ackResult()、writeBackArtifacts()
+- [x] **CONN-02**: GSD Connector 从 PLAN 生成 Task Card，填充 wave、depends_on，补全新文件路径到 files_to_modify
+- [x] **CONN-03**: GSD Connector 在结果合并后回写 SUMMARY/STATE/ROADMAP/VERIFICATION
 
 ### HTTP API（HTTP 接口）
 
