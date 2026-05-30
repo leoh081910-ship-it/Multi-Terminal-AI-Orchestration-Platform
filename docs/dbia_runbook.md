@@ -173,3 +173,47 @@ npx playwright test e2e/triage-dashboard.spec.ts
 | `review_executor.py` | `workflow-library-system/scripts/runtime/executors/` | Review endpoint logic |
 | `defect_ticket.go` | `多终端 AI 编排平台/internal/server/` | Defect ticket + anti-loop |
 | `review_worker.go` | `多终端 AI 编排平台/internal/server/` | Review orchestration |
+| `dbia_release_check.py` | `workflow-library-system/scripts/` | Pre-release validation |
+| `dbia_triage_e2e.py` | `workflow-library-system/scripts/` | Triage API E2E test |
+| `triage-dashboard.spec.ts` | `多终端 AI 编排平台/web/e2e/` | Playwright browser spec |
+
+## Low-Memory Environment Tips
+
+When running on Windows with memory pressure (VirtualAlloc failures, Node OOM):
+
+```powershell
+# Go: limit GC memory target
+$env:GOMEMLIMIT = "2GiB"
+$env:GOGC = "50"
+
+# Node/Playwright: limit heap
+$env:NODE_OPTIONS = "--max-old-space-size=1024"
+
+# Playwright: run tests serially instead of parallel
+npx playwright test --workers=1 e2e/triage-dashboard.spec.ts
+
+# Vite build: avoid simultaneous Go compilation
+# Build frontend first, then start Go server
+cd web && npm run build
+cd .. && go run ./cmd/server
+```
+
+## Log Cleanup
+
+Runtime logs in `.orchestrator/logs/` can accumulate. Clean periodically:
+
+```powershell
+# Remove logs older than 7 days
+Get-ChildItem .orchestrator/logs/*.log | Where-Object {$_.LastWriteTime -lt (Get-Date).AddDays(-7)} | Remove-Item
+```
+
+The `.gitignore` already excludes `*.log` and `.orchestrator/` directories.
+
+## Release Checklist
+
+```powershell
+cd "E:\vibe coding\Projects\workflow-library-system\scripts"
+python dbia_release_check.py
+```
+
+This validates: pytest suite, LLM self-test, git tags, dirty files, Go API, log noise.
