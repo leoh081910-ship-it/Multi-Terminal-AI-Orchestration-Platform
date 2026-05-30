@@ -103,12 +103,31 @@ func (w *ReviewWorker) processReviewPendingTasks(ctx context.Context) error {
 			if !active {
 				// Review task is done or doesn't exist, but parent is still in review_pending.
 				// This means processReviewResults hasn't caught up yet, or the review task
-				// completed without updating the parent. Auto-approve to unblock.
-				w.logger.Warn().
-					Str("task_id", task.ID).
-					Str("review_task_id", reviewTaskID).
-					Msg("parent still in review_pending after review task finished, auto-approving")
-				w.approveTask(ctx, task, payload, reviewTaskID)
+				// completed without updating the parent.
+				//
+				// Read the persisted review_decision BEFORE deciding to approve or reject.
+				reviewTask := w.findTaskByID(reviewTaskID, tasks)
+				var safetyDecision string
+				var safetySummary string
+				if reviewTask != nil {
+					reviewPayload := decodeCompatPayload(reviewTask.CardJSON)
+					safetyDecision = readString(reviewPayload, "review_decision")
+					safetySummary = readString(reviewPayload, "result_summary")
+				}
+
+				if safetyDecision == "rejected" {
+					w.logger.Warn().
+						Str("task_id", task.ID).
+						Str("review_task_id", reviewTaskID).
+						Msg("safety valve: review task finished with rejection, routing to rejectTask")
+					w.rejectTask(ctx, task, payload, reviewTaskID, safetySummary, tasks)
+				} else {
+					w.logger.Warn().
+						Str("task_id", task.ID).
+						Str("review_task_id", reviewTaskID).
+						Msg("parent still in review_pending after review task finished, auto-approving")
+					w.approveTask(ctx, task, payload, reviewTaskID)
+				}
 				continue
 			}
 
@@ -286,6 +305,16 @@ func (w *ReviewWorker) processReviewResults(ctx context.Context) error {
 			// Check review_decision field first
 			reviewDecision = readString(payload, "review_decision")
 			if reviewDecision == "" {
+				if resultSummary == "" {
+					// Race guard: both decision and summary are empty,
+					// meaning persistCompatPayload hasn't landed yet.
+					// Skip this cycle — the next poll will pick it up.
+					w.logger.Warn().
+						Str("task_id", task.ID).
+						Str("parent_task_id", parentTaskID).
+						Msg("review decision not yet persisted, deferring to next cycle")
+					continue
+				}
 				// Fall back to result_summary heuristic
 				// Look for rejection keywords in the review result
 				if containsRejectionKeywords(resultSummary) {
@@ -351,29 +380,62 @@ func (w *ReviewWorker) approveTask(ctx context.Context, task *ent.Task, payload 
 
 // rejectTask creates a rework task and moves original back to retry_waiting.
 func (w *ReviewWorker) rejectTask(ctx context.Context, task *ent.Task, payload map[string]interface{}, reviewTaskID string, rejectionReason string, allTasks []*ent.Task) {
-	// Create rework task
+	// ── Anti-loop gate ──
+	blocked, blockReason := shouldBlockRework(payload, rejectionReason)
+	if blocked {
+		w.logger.Warn().
+			Str("task_id", task.ID).
+			Str("reason", blockReason).
+			Msg("rework blocked by anti-loop policy, escalating to manual triage")
+
+		// Move to blocked state instead of creating another rework task
+		if err := w.server.transitionCompatTaskState(ctx, task, engine.StateBlocked, "anti_loop_escalation", blockReason); err != nil {
+			w.logger.Error().Err(err).Str("task_id", task.ID).Msg("failed to move task to blocked state")
+			return
+		}
+
+		// Update payload for observability only — do NOT call persistCompatPayload
+		// because it re-derives state via compatWorkflowState which does not produce
+		// StateBlocked, overwriting the transition above.
+		payload["review_decision"] = "rejected"
+		payload["coordination_stage"] = "escalated_to_triage"
+		return
+	}
+
+	// ── Build Defect Ticket ──
+	autoRepairCount := readIntDefault(payload, 0, "auto_repair_count") + 1
 	rootTaskID := readString(payload, "root_task_id")
 	if rootTaskID == "" {
 		rootTaskID = task.ID
 	}
-
 	reworkTaskID := "TS-" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))[:8]
 	projectID := firstCompatNonEmpty(readString(payload, "project_id"), task.ProjectID)
 
-	// Inherit output targets from original task so CLI executor can validate
 	outputArtifacts := readStringSlice(payload, "output_artifacts")
 	filesToModify := readStringSlice(payload, "files_to_modify")
+	artifactPath := readString(payload, "artifact_path")
+
+	ticket := DefectTicket{
+		ParentTaskID:    task.ID,
+		ReviewTaskID:    reviewTaskID,
+		RejectionReason: rejectionReason,
+		ArtifactPath:    artifactPath,
+		OriginalGoal:    readString(payload, "description"),
+		OutputArtifacts: outputArtifacts,
+		AcceptCriteria:  readStringSlice(payload, "acceptance_criteria"),
+		RepairAttempt:   autoRepairCount,
+	}
 
 	reworkPayload := map[string]interface{}{
 		"task_id":               reworkTaskID,
 		"id":                    reworkTaskID,
-		"title":                 fmt.Sprintf("[rework] Fix issues from review of %s", task.ID),
+		"title":                 buildReworkTitle(task.ID, autoRepairCount, rejectionReason),
 		"project_id":            projectID,
 		"type":                  string(RemediationTypeRework),
 		"owner_agent":           readString(payload, "owner_agent"),
 		"status":                "backlog",
 		"priority":              2,
-		"description":           fmt.Sprintf("Fix issues found in review: %s", firstCompatNonEmpty(rejectionReason, "review rejected")),
+		"description":           buildReworkDescription(ticket),
 		"dispatch_mode":         "auto",
 		"auto_dispatch_enabled": true,
 		"parent_task_id":        task.ID,
@@ -381,10 +443,14 @@ func (w *ReviewWorker) rejectTask(ctx context.Context, task *ent.Task, payload m
 		"coordination_stage":    "rework",
 		"output_artifacts":      outputArtifacts,
 		"files_to_modify":       filesToModify,
+		"acceptance_criteria":   readStringSlice(payload, "acceptance_criteria"),
 		"context": map[string]interface{}{
-			"original_task_id": task.ID,
-			"review_task_id":   reviewTaskID,
-			"rejection_reason": rejectionReason,
+			"original_task_id":        task.ID,
+			"review_task_id":          reviewTaskID,
+			"rejection_reason":        rejectionReason,
+			"original_artifact_path":  artifactPath,
+			"original_workspace_path": readString(payload, "workspace_path"),
+			"repair_attempt":          autoRepairCount,
 		},
 	}
 
@@ -410,7 +476,8 @@ func (w *ReviewWorker) rejectTask(ctx context.Context, task *ent.Task, payload m
 	payload["dispatch_status"] = "failed"
 	payload["status"] = "ready"
 	payload["last_review_task_id"] = reviewTaskID
-	payload["auto_repair_count"] = readIntDefault(payload, 0, "auto_repair_count") + 1
+	payload["auto_repair_count"] = autoRepairCount
+	payload["last_rejection_reason"] = rejectionReason
 
 	if err := w.server.persistCompatPayload(ctx, task.ID, payload); err != nil {
 		w.logger.Error().Err(err).Str("task_id", task.ID).Msg("failed to persist review rejection")
@@ -419,6 +486,7 @@ func (w *ReviewWorker) rejectTask(ctx context.Context, task *ent.Task, payload m
 	w.logger.Info().
 		Str("task_id", task.ID).
 		Str("rework_task_id", reworkTaskID).
+		Int("attempt", autoRepairCount).
 		Msg("review rejected, rework task created")
 }
 

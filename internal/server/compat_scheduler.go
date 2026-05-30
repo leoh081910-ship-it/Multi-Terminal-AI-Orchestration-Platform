@@ -1497,6 +1497,8 @@ func compatWorkflowState(status, dispatchStatus string) string {
 		return engine.StateRunning
 	case "review":
 		return engine.StatePatchReady
+	case "patch_ready":
+		return engine.StatePatchReady
 	case "verified":
 		return engine.StateVerified
 	case "done":
@@ -1691,8 +1693,10 @@ func normalizeCompatAgent(value string) string {
 		return compatAgentGemini
 	case "codex":
 		return compatAgentCodex
+	case "reviewer":
+		return compatAgentReviewer
 	default:
-		return compatAgentClaude
+		return value // preserve unknown agents (e.g. HTTP runners) instead of silently mapping to Claude
 	}
 }
 

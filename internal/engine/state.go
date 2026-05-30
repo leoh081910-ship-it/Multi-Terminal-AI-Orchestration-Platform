@@ -65,6 +65,7 @@ var validTransitions = map[string]map[string]bool{
 	StateReviewPending: {
 		StateVerified:     true, // review passed
 		StateRetryWaiting: true, // review rejected, needs rework
+		StateBlocked:      true, // anti-loop escalation: auto-repair limit reached
 	},
 	StatePatchReady: {
 		StateVerified:     true,

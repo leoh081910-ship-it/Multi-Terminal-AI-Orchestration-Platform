@@ -112,6 +112,13 @@ func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry 
 	}
 	payload["files_to_modify"] = filesToModify
 
+	// REVR-02: Reverse tasks missing required fields must not proceed to routed.
+	if isReverseCompatTask(payload) {
+		if err := validateReverseDispatchFields(payload); err != nil {
+			return nil, fmt.Errorf("reverse task dispatch blocked: %w", err)
+		}
+	}
+
 	if err := s.prepareCompatTaskForExecution(ctx, task); err != nil {
 		return nil, err
 	}
@@ -149,6 +156,16 @@ func (s *Server) dispatchCompatTask(ctx context.Context, taskID string, isRetry 
 	payload["command"] = command
 	if shell != "" {
 		payload["shell"] = shell
+	}
+
+	// REVR-08: On retry, reset loop_iteration_count and remove analysis state
+	// so the reverse loop starts fresh.
+	if isRetry && isReverseCompatTask(payload) {
+		payload["loop_iteration_count"] = 0
+		if mgr := s.compatExecutionForProject(projectID); mgr != nil {
+			artifactDir := filepath.Join(filepath.Dir(mgr.artifactPath(taskID)), taskID, "reverse")
+			os.Remove(filepath.Join(artifactDir, "analysis_state.md"))
+		}
 	}
 
 	if err := s.persistCompatPayload(ctx, taskID, payload); err != nil {
@@ -384,7 +401,7 @@ func (s *Server) runCompatExecution(executionManager *compatExecutionManager, ta
 				{Path: filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse", "diff_report.json")},
 			},
 		}
-		if err := s.finishCompatExecutionSuccess(ctx, taskID, payload, result); err != nil {
+		if err := s.finishReverseExecutionSuccess(ctx, taskID, payload, result); err != nil {
 			s.logger.Error().Err(err).Str("task_id", taskID).Str("trace_id", traceID).Msg("failed to mark reverse execution success")
 		}
 		return
@@ -591,6 +608,13 @@ func (s *Server) finishCompatExecutionSuccess(ctx context.Context, taskID string
 				Str("task_id", taskID).
 				Str("review_decision", reviewDecision).
 				Msg("review decision extracted from execution output")
+		}
+		// P0 race fix: persist decision to DB BEFORE state transitions.
+		// Without this, ReviewWorker can read verified state with empty
+		// review_decision and default to approved (fail-open).
+		if err := s.persistCompatPayload(ctx, taskID, payload); err != nil {
+			s.logger.Error().Err(err).Str("task_id", taskID).Msg("failed to persist review decision before state transition")
+			return err
 		}
 	}
 
@@ -817,6 +841,24 @@ func isReverseCompatTask(payload map[string]interface{}) bool {
 	return readString(payload, "type") == string(reverse.TaskTypeStaticCRebuild)
 }
 
+var reverseRequiredFields = []string{
+	"target_so_path", "ida_mcp_endpoint", "frida_hook_spec",
+	"oracle_input_spec", "oracle_output_ref",
+}
+
+func validateReverseDispatchFields(payload map[string]interface{}) error {
+	for _, field := range reverseRequiredFields {
+		val, ok := payload[field]
+		if !ok || val == nil {
+			return fmt.Errorf("missing required field: %s", field)
+		}
+		if s, ok := val.(string); ok && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("missing required field: %s", field)
+		}
+	}
+	return nil
+}
+
 func (s *Server) buildReverseTaskConfig(taskID string, payload map[string]interface{}, mgr *compatExecutionManager) (*reverse.ReverseTaskConfig, error) {
 	if mgr == nil {
 		return nil, fmt.Errorf("project execution is not configured")
@@ -910,6 +952,9 @@ func (s *Server) validateReverseArtifacts(config *reverse.ReverseTaskConfig) err
 	if _, err := os.Stat(config.FinalArtifactPath); err != nil {
 		return fmt.Errorf("reverse final artifact validation failed: %w", err)
 	}
+	if err := reverse.ValidateFinalC(config.FinalArtifactPath); err != nil {
+		return fmt.Errorf("reverse final artifact validation failed: %w", err)
+	}
 
 	diffReportPath := filepath.Join(config.ArtifactBasePath, config.TaskID, "reverse", "diff_report.json")
 	data, err := os.ReadFile(diffReportPath)
@@ -924,6 +969,29 @@ func (s *Server) validateReverseArtifacts(config *reverse.ReverseTaskConfig) err
 		return fmt.Errorf("reverse match rate is %.2f, expected 100.00", report.MatchRate)
 	}
 	return nil
+}
+
+func (s *Server) finishReverseExecutionSuccess(ctx context.Context, taskID string, payload map[string]interface{}, result *transport.ExecutionResult) error {
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return errCompatTaskNotFound
+	}
+	if task.State == engine.StateRunning {
+		if err := s.transitionCompatTaskState(ctx, task, engine.StatePatchReady, "", ""); err != nil {
+			return err
+		}
+	}
+	syncCompatPayloadState(payload, engine.StatePatchReady)
+	payload["dispatch_status"] = "completed"
+	payload["status"] = "patch_ready"
+	payload["coordination_stage"] = "patch_ready"
+	payload["last_dispatch_error"] = nil
+	payload["last_error_reason"] = nil
+	payload["execution_session_id"] = nil
+	return s.persistCompatPayload(ctx, taskID, payload)
 }
 
 func (s *Server) finishReverseExecutionFailure(ctx context.Context, taskID, reason string) {

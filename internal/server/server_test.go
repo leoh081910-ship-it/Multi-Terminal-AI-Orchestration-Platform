@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,13 @@ func decodePaginatedTasks(body []byte) ([]compatSchedulerTask, error) {
 		return nil, err
 	}
 	return page.Items, nil
+}
+
+func testExecutionShell() string {
+	if runtime.GOOS == "windows" {
+		return "powershell"
+	}
+	return "sh"
 }
 
 func setupTestServer(t *testing.T) (*Server, *store.Repository, func()) {
@@ -877,6 +885,298 @@ func TestCompatSchedulerProjectScopedRoutesFilterTasks(t *testing.T) {
 	}
 }
 
+func TestCompatCreateProjectDerivesIDFromNameBeforeRepoBase(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	baseDir := t.TempDir()
+	defaultRepo := filepath.Join(baseDir, "default")
+	if err := os.MkdirAll(defaultRepo, 0755); err != nil {
+		t.Fatalf("mkdir default repo: %v", err)
+	}
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "default",
+		Projects: []CompatProjectConfig{
+			{ID: "default", Name: "Default", MainRepoPath: defaultRepo},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"name":"PPT Tool Assistant","repo_root":"` + filepath.ToSlash(defaultRepo) + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+
+	var project compatProjectSummary
+	if err := json.NewDecoder(res.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+	if project.ID != "ppt_tool_assistant" {
+		t.Fatalf("expected project ID from name, got %+v", project)
+	}
+}
+
+func TestCompatCreateProjectCreatesDefaultRepoWhenRepoRootOmitted(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	baseDir := t.TempDir()
+	defaultRepo := filepath.Join(baseDir, "default")
+	if err := os.MkdirAll(defaultRepo, 0755); err != nil {
+		t.Fatalf("mkdir default repo: %v", err)
+	}
+	repoBase := filepath.Join(baseDir, "projects")
+	srv.SetProjectRepoBase(repoBase, "")
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "default",
+		Projects: []CompatProjectConfig{
+			{ID: "default", Name: "Default", MainRepoPath: defaultRepo},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"name":"Auto Repo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+
+	var project compatProjectSummary
+	if err := json.NewDecoder(res.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+	expectedRepo := filepath.Join(repoBase, "auto_repo")
+	if project.ID != "auto_repo" || project.RepoRoot != expectedRepo {
+		t.Fatalf("expected auto repo project at %q, got %+v", expectedRepo, project)
+	}
+	if _, err := os.Stat(filepath.Join(expectedRepo, ".git")); err != nil {
+		t.Fatalf("expected git repository to be initialized: %v", err)
+	}
+}
+
+func TestCompatCreateProjectMapsWindowsHostPathToContainerRepoBase(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	baseDir := t.TempDir()
+	defaultRepo := filepath.Join(baseDir, "default")
+	if err := os.MkdirAll(defaultRepo, 0755); err != nil {
+		t.Fatalf("mkdir default repo: %v", err)
+	}
+	repoBase := filepath.Join(baseDir, "projects")
+	hostRepoBase := `E:\vibe coding\Projects`
+	srv.SetProjectRepoBase(repoBase, hostRepoBase)
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "default",
+		Projects: []CompatProjectConfig{
+			{ID: "default", Name: "Default", MainRepoPath: defaultRepo},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"name":      "Host Repo",
+		"repo_root": `E:\vibe coding\Projects\Host Repo`,
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+
+	var project compatProjectSummary
+	if err := json.NewDecoder(res.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+	expectedRepo := filepath.Join(repoBase, "Host Repo")
+	if project.ID != "host_repo" || project.RepoRoot != expectedRepo {
+		t.Fatalf("expected mapped repo project at %q, got %+v", expectedRepo, project)
+	}
+	if _, err := os.Stat(filepath.Join(expectedRepo, ".git")); err != nil {
+		t.Fatalf("expected mapped git repository to be initialized: %v", err)
+	}
+}
+
+func TestCompatDiscoverProjectsImportsAndInitializesProjectDirs(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	baseDir := t.TempDir()
+	repoBase := filepath.Join(baseDir, "projects")
+	gitRepo := filepath.Join(repoBase, "Sample Repo")
+	plainDir := filepath.Join(repoBase, "Plain Dir")
+	for _, path := range []string{filepath.Join(gitRepo, ".git"), plainDir} {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
+
+	defaultRepo := filepath.Join(baseDir, "default")
+	if err := os.MkdirAll(defaultRepo, 0755); err != nil {
+		t.Fatalf("mkdir default repo: %v", err)
+	}
+	configPath := filepath.Join(baseDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`projects:
+  default: default
+  repo_base: `+filepath.ToSlash(repoBase)+`
+  items:
+    - id: default
+      name: Default
+      repo_root: `+filepath.ToSlash(defaultRepo)+`
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	srv.SetProjectRepoBase(repoBase, "")
+	srv.SetProjectConfigStore(NewProjectConfigStore(configPath))
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "default",
+		Projects: []CompatProjectConfig{
+			{ID: "default", Name: "Default", MainRepoPath: defaultRepo},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	result, err := srv.DiscoverCompatProjects()
+	if err != nil {
+		t.Fatalf("DiscoverCompatProjects failed: %v", err)
+	}
+	if len(result.Created) != 2 {
+		t.Fatalf("expected two project dirs to be imported, got %+v", result.Created)
+	}
+	created := map[string]compatProjectSummary{}
+	for _, project := range result.Created {
+		created[project.ID] = project
+	}
+	if created["sample_repo"].RepoRoot != gitRepo {
+		t.Fatalf("expected Sample Repo to be imported, got %+v", result.Created)
+	}
+	if created["plain_dir"].RepoRoot != plainDir {
+		t.Fatalf("expected Plain Dir to be imported, got %+v", result.Created)
+	}
+	if _, err := os.Stat(filepath.Join(plainDir, ".git")); err != nil {
+		t.Fatalf("expected Plain Dir to be git-initialized: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected projects status %d, got %d", http.StatusOK, res.Code)
+	}
+	var projects []compatProjectSummary
+	if err := json.NewDecoder(res.Body).Decode(&projects); err != nil {
+		t.Fatalf("decode projects: %v", err)
+	}
+	if len(projects) != 3 {
+		t.Fatalf("expected 3 registered projects, got %+v", projects)
+	}
+
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(configData), "sample_repo") {
+		t.Fatalf("expected discovered project to be persisted, config:\n%s", string(configData))
+	}
+	if !strings.Contains(string(configData), "plain_dir") {
+		t.Fatalf("expected initialized project dir to be persisted, config:\n%s", string(configData))
+	}
+}
+
+func TestCompatDiscoverProjectsSkipsAlreadyRegisteredRepos(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	baseDir := t.TempDir()
+	repoBase := filepath.Join(baseDir, "projects")
+	registeredRepo := filepath.Join(repoBase, "Registered Repo")
+	if err := os.MkdirAll(filepath.Join(registeredRepo, ".git"), 0755); err != nil {
+		t.Fatalf("mkdir registered repo: %v", err)
+	}
+
+	srv.SetProjectRepoBase(repoBase, "")
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "registered_repo",
+		Projects: []CompatProjectConfig{
+			{ID: "registered_repo", Name: "Registered Repo", MainRepoPath: registeredRepo},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	result, err := srv.DiscoverCompatProjects()
+	if err != nil {
+		t.Fatalf("DiscoverCompatProjects failed: %v", err)
+	}
+	if len(result.Created) != 0 {
+		t.Fatalf("expected no created projects, got %+v", result.Created)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].Reason != "already registered" {
+		t.Fatalf("expected already registered skip, got %+v", result.Skipped)
+	}
+}
+
+func TestCompatDiscoverProjectsRoute(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	baseDir := t.TempDir()
+	repoBase := filepath.Join(baseDir, "projects")
+	gitRepo := filepath.Join(repoBase, "Route Repo")
+	if err := os.MkdirAll(filepath.Join(gitRepo, ".git"), 0755); err != nil {
+		t.Fatalf("mkdir route repo: %v", err)
+	}
+	defaultRepo := filepath.Join(baseDir, "default")
+	if err := os.MkdirAll(defaultRepo, 0755); err != nil {
+		t.Fatalf("mkdir default repo: %v", err)
+	}
+
+	srv.SetProjectRepoBase(repoBase, "")
+	if err := srv.ConfigureCompatProjects(CompatProjectsConfig{
+		DefaultProjectID: "default",
+		Projects: []CompatProjectConfig{
+			{ID: "default", Name: "Default", MainRepoPath: defaultRepo},
+		},
+	}); err != nil {
+		t.Fatalf("ConfigureCompatProjects failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/discover", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	var result CompatProjectDiscoveryResult
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		t.Fatalf("decode discovery result: %v", err)
+	}
+	if len(result.Created) != 1 || result.Created[0].ID != "route_repo" {
+		t.Fatalf("expected Route Repo to be discovered, got %+v", result.Created)
+	}
+}
+
 func TestCompatSchedulerProjectScopedWaveRoutesUseProjectAndWaveParams(t *testing.T) {
 	srv, repo, cleanup := setupTestServer(t)
 	defer cleanup()
@@ -1160,7 +1460,7 @@ func TestCompatDispatchExecutesConfiguredTaskAndProducesArtifacts(t *testing.T) 
 		ArtifactBasePath:  filepath.Join(baseDir, "artifacts"),
 	})
 
-	createCompatTask(t, repo, "GM-REAL-001", `{"id":"GM-REAL-001","dispatch_ref":"dispatch_compat","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"Generate board summary note","owner_agent":"Gemini","status":"ready","type":"analysis","priority":2,"output_artifacts":["result.txt"],"shell":"powershell","command":"python -c \"from pathlib import Path; Path('result.txt').write_text('done', encoding='utf-8')\""}`)
+	createCompatTask(t, repo, "GM-REAL-001", `{"id":"GM-REAL-001","dispatch_ref":"dispatch_compat","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"Generate board summary note","owner_agent":"Gemini","status":"ready","type":"analysis","priority":2,"output_artifacts":["result.txt"],"shell":"`+testExecutionShell()+`","command":"python -c \"from pathlib import Path; Path('result.txt').write_text('done', encoding='utf-8')\""}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/GM-REAL-001/dispatch", nil)
 	res := httptest.NewRecorder()
@@ -1298,7 +1598,7 @@ func TestAutoDispatcherDispatchesEligibleAutoTask(t *testing.T) {
 		ArtifactBasePath:  filepath.Join(baseDir, "artifacts"),
 	})
 
-	createCompatTask(t, repo, "AUTO-001", `{"id":"AUTO-001","dispatch_ref":"dispatch_auto","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"Auto task","owner_agent":"Claude","status":"ready","type":"automation","priority":5,"dispatch_mode":"auto","auto_dispatch_enabled":true,"dispatch_status":"pending","output_artifacts":["result.txt"],"shell":"powershell","command":"python -c \"from pathlib import Path; Path('result.txt').write_text('auto', encoding='utf-8')\""}`)
+	createCompatTask(t, repo, "AUTO-001", `{"id":"AUTO-001","dispatch_ref":"dispatch_auto","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"Auto task","owner_agent":"Claude","status":"ready","type":"automation","priority":5,"dispatch_mode":"auto","auto_dispatch_enabled":true,"dispatch_status":"pending","output_artifacts":["result.txt"],"shell":"`+testExecutionShell()+`","command":"python -c \"from pathlib import Path; Path('result.txt').write_text('auto', encoding='utf-8')\""}`)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1348,7 +1648,7 @@ func TestAutoDispatcherWaitsForDoneDependencies(t *testing.T) {
 	})
 
 	createCompatTask(t, repo, "AUTO-DEP-001", `{"id":"AUTO-DEP-001","dispatch_ref":"dispatch_auto","state":"verified","transport":"api","wave":1,"topo_rank":1,"title":"Dependency task","owner_agent":"Claude","status":"verified","type":"automation","priority":5,"dispatch_mode":"auto","auto_dispatch_enabled":true,"dispatch_status":"completed","output_artifacts":["dep.txt"]}`)
-	createCompatTask(t, repo, "AUTO-CHILD-001", `{"id":"AUTO-CHILD-001","dispatch_ref":"dispatch_auto","state":"queued","transport":"api","wave":1,"topo_rank":2,"title":"Dependent task","owner_agent":"Gemini","status":"ready","type":"automation","priority":4,"dispatch_mode":"auto","auto_dispatch_enabled":true,"dispatch_status":"pending","depends_on":["AUTO-DEP-001"],"output_artifacts":["child.txt"],"shell":"powershell","command":"python -c \"from pathlib import Path; Path('child.txt').write_text('child', encoding='utf-8')\""}`)
+	createCompatTask(t, repo, "AUTO-CHILD-001", `{"id":"AUTO-CHILD-001","dispatch_ref":"dispatch_auto","state":"queued","transport":"api","wave":1,"topo_rank":2,"title":"Dependent task","owner_agent":"Gemini","status":"ready","type":"automation","priority":4,"dispatch_mode":"auto","auto_dispatch_enabled":true,"dispatch_status":"pending","depends_on":["AUTO-DEP-001"],"output_artifacts":["child.txt"],"shell":"`+testExecutionShell()+`","command":"python -c \"from pathlib import Path; Path('child.txt').write_text('child', encoding='utf-8')\""}`)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1652,7 +1952,7 @@ func TestAutoCreateSystemReport(t *testing.T) {
 
 	// Create a noop-review system task that uses API transport.
 	// The command writes nothing to the expected report path.
-	createCompatTask(t, repo, "SYS-NOOP-001", `{"id":"SYS-NOOP-001","dispatch_ref":"dispatch_compat","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"[noop-review] No-op check","owner_agent":"Claude","status":"ready","type":"noop-review","priority":2,"dispatch_mode":"auto","auto_dispatch_enabled":true,"output_artifacts":[".orchestrator/reports/SYS-NOOP-001-noop-review.md"],"files_to_modify":[".orchestrator/reports/SYS-NOOP-001-noop-review.md"],"parent_task_id":"PARENT-001","root_task_id":"PARENT-001","shell":"powershell","command":"python -c \"print('Review: no changes needed, task is a no-op. All good.')\""}`)
+	createCompatTask(t, repo, "SYS-NOOP-001", `{"id":"SYS-NOOP-001","dispatch_ref":"dispatch_compat","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"[noop-review] No-op check","owner_agent":"Claude","status":"ready","type":"noop-review","priority":2,"dispatch_mode":"auto","auto_dispatch_enabled":true,"output_artifacts":[".orchestrator/reports/SYS-NOOP-001-noop-review.md"],"files_to_modify":[".orchestrator/reports/SYS-NOOP-001-noop-review.md"],"parent_task_id":"PARENT-001","root_task_id":"PARENT-001","shell":"`+testExecutionShell()+`","command":"python -c \"print('Review: no changes needed, task is a no-op. All good.')\""}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/SYS-NOOP-001/dispatch", nil)
 	res := httptest.NewRecorder()
@@ -1718,7 +2018,7 @@ func TestAutoCreateSystemReportDoesNotApplyToNormalTasks(t *testing.T) {
 	})
 
 	// Create a normal (non-system) task that won't produce expected output
-	createCompatTask(t, repo, "NORMAL-001", `{"id":"NORMAL-001","dispatch_ref":"dispatch_compat","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"Normal task","owner_agent":"Claude","status":"ready","type":"integration","priority":3,"output_artifacts":["result.txt"],"shell":"powershell","command":"python -c \"print('doing work but not writing file')\""}`)
+	createCompatTask(t, repo, "NORMAL-001", `{"id":"NORMAL-001","dispatch_ref":"dispatch_compat","state":"queued","transport":"api","wave":1,"topo_rank":1,"title":"Normal task","owner_agent":"Claude","status":"ready","type":"integration","priority":3,"output_artifacts":["result.txt"],"shell":"`+testExecutionShell()+`","command":"python -c \"print('doing work but not writing file')\""}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/NORMAL-001/dispatch", nil)
 	res := httptest.NewRecorder()
@@ -2116,7 +2416,9 @@ func createTestOrg(t *testing.T, srv *Server) string {
 		t.Fatalf("create org: expected %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
 	}
 	var resp struct {
-		Data struct{ ID string `json:"id"` } `json:"data"`
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
 	json.NewDecoder(res.Body).Decode(&resp)
 	return resp.Data.ID
@@ -2141,7 +2443,9 @@ func TestHandleCreateAgent_InvalidHTTPRunnerConfig(t *testing.T) {
 	res = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(res, req)
 	var listResp struct {
-		Data []struct{ ID string `json:"id"` } `json:"data"`
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
 	json.NewDecoder(res.Body).Decode(&listResp)
 	for _, a := range listResp.Data {
@@ -2246,7 +2550,9 @@ func TestHandleUpdateAgent_ValidRunnerConfig(t *testing.T) {
 	res := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(res, req)
 	var createResp struct {
-		Data struct{ ID string `json:"id"` } `json:"data"`
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
 	json.NewDecoder(res.Body).Decode(&createResp)
 	agentID := createResp.Data.ID
@@ -2261,4 +2567,262 @@ func TestHandleUpdateAgent_ValidRunnerConfig(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("update to MCP: expected 200, got %d: %s", res.Code, res.Body.String())
 	}
+}
+
+// --- Phase 2 regression tests: lock down Reviewer Runner fixes ---
+
+func TestNormalizeCompatAgentPreservesReviewer(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Reviewer", "Reviewer"},
+		{"reviewer", "Reviewer"},
+		{"REVIEWER", "Reviewer"},
+		{"Claude", "Claude"},
+		{"claude-code", "Claude"},
+		{"Gemini", "Gemini"},
+		{"Codex", "Codex"},
+		{"SomeHttpAgent", "SomeHttpAgent"},
+		{"deepseek-coder", "deepseek-coder"},
+	}
+	for _, tt := range tests {
+		got := normalizeCompatAgent(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeCompatAgent(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestReviewWorkerSkipsWhenDecisionNotPersisted(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create parent in review_pending
+	createCompatTask(t, repo, "RV-DEFER-001", `{"id":"RV-DEFER-001","dispatch_ref":"dispatch_review","state":"review_pending","transport":"cli","wave":1,"topo_rank":1,"title":"Defer test parent","owner_agent":"Claude","status":"review_pending","type":"integration","priority":1,"dispatch_status":"review_pending","output_artifacts":["src/file.go"],"artifact_path":"C:/artifacts/defer-parent"}`)
+
+	rw := NewReviewWorker(srv, repo, srv.logger, time.Second)
+	if err := rw.processReviewPendingTasks(ctx); err != nil {
+		t.Fatalf("processReviewPendingTasks: %v", err)
+	}
+
+	parent, _ := repo.GetTaskByID(ctx, "RV-DEFER-001")
+	reviewTaskID := readString(decodeCompatPayload(parent.CardJSON), "last_review_task_id")
+	if reviewTaskID == "" {
+		t.Fatal("expected review task to be created")
+	}
+
+	// Simulate: review task finishes (verified) but card_json has NO review_decision.
+	// This is the pre-persist race window.
+	reviewTask, _ := repo.GetTaskByID(ctx, reviewTaskID)
+	srv.transitionCompatTaskState(ctx, reviewTask, engine.StateVerified, "", "")
+
+	// processReviewResults should SKIP (defer), not auto-approve.
+	if err := rw.processReviewResults(ctx); err != nil {
+		t.Fatalf("processReviewResults: %v", err)
+	}
+
+	parent, _ = repo.GetTaskByID(ctx, "RV-DEFER-001")
+	if parent.State != engine.StateReviewPending {
+		t.Fatalf("parent should remain review_pending when decision not persisted, got state=%q", parent.State)
+	}
+}
+
+func TestRejectedReviewCreatesRework(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create parent in review_pending
+	createCompatTask(t, repo, "RV-REJECT-001", `{"id":"RV-REJECT-001","dispatch_ref":"dispatch_review","state":"review_pending","transport":"cli","wave":1,"topo_rank":1,"title":"Reject test parent","owner_agent":"Claude","status":"review_pending","type":"integration","priority":1,"dispatch_status":"review_pending","output_artifacts":["src/file.go"],"artifact_path":"C:/artifacts/reject-parent","files_to_modify":["src/file.go"]}`)
+
+	rw := NewReviewWorker(srv, repo, srv.logger, time.Second)
+	rw.processReviewPendingTasks(ctx)
+
+	parent, _ := repo.GetTaskByID(ctx, "RV-REJECT-001")
+	reviewTaskID := readString(decodeCompatPayload(parent.CardJSON), "last_review_task_id")
+	if reviewTaskID == "" {
+		t.Fatal("expected review task to be created")
+	}
+
+	// Simulate: review task completed with rejected decision persisted in card_json
+	reviewPayload := `{"id":"` + reviewTaskID + `","type":"code-review","owner_agent":"Reviewer","state":"verified","dispatch_ref":"dispatch_compat","transport":"cli","wave":1,"topo_rank":1,"review_decision":"rejected","result_summary":"Code has critical bugs: missing imports, syntax errors.","parent_task_id":"RV-REJECT-001","dispatch_status":"completed","status":"verified"}`
+	repo.UpdateTask(ctx, reviewTaskID, &store.TaskCard{
+		CardJSON: reviewPayload,
+		State:    engine.StateVerified,
+	})
+
+	// Process results — should reject parent and create rework task
+	if err := rw.processReviewResults(ctx); err != nil {
+		t.Fatalf("processReviewResults: %v", err)
+	}
+
+	parent, _ = repo.GetTaskByID(ctx, "RV-REJECT-001")
+	if parent.State != engine.StateRetryWaiting {
+		t.Fatalf("parent should be in retry_waiting after rejection, got state=%q", parent.State)
+	}
+
+	parentPayload := decodeCompatPayload(parent.CardJSON)
+	if readString(parentPayload, "review_decision") != "rejected" {
+		t.Fatalf("parent review_decision should be 'rejected', got %q", readString(parentPayload, "review_decision"))
+	}
+
+	// Verify a rework task was created
+	allTasks, _ := repo.ListAllTasks(ctx)
+	foundRework := false
+	for _, t := range allTasks {
+		p := decodeCompatPayload(t.CardJSON)
+		if readString(p, "type") == "rework" && readString(p, "parent_task_id") == "RV-REJECT-001" {
+			foundRework = true
+			break
+		}
+	}
+	if !foundRework {
+		t.Fatal("expected a rework task to be created for rejected parent")
+	}
+}
+
+// --- Phase 5: Defect Ticket + Anti-loop tests ---
+
+func TestReworkBlockedWhenAutoRepairLimitReached(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create review task first (simulating ReviewWorker already created it)
+	createCompatTask(t, repo, "RV-LOOP-REVIEW", `{"id":"RV-LOOP-REVIEW","dispatch_ref":"dispatch_compat","state":"verified","transport":"cli","wave":1,"topo_rank":1,"type":"code-review","owner_agent":"Reviewer","status":"verified","dispatch_status":"completed","review_decision":"rejected","result_summary":"Still broken: missing imports.","parent_task_id":"RV-LOOP-001"}`)
+
+	// Create parent in review_pending with auto_repair_count at limit
+	createCompatTask(t, repo, "RV-LOOP-001", `{"id":"RV-LOOP-001","dispatch_ref":"dispatch_review","state":"review_pending","transport":"cli","wave":1,"topo_rank":1,"title":"Loop test parent","owner_agent":"Claude","status":"review_pending","type":"integration","priority":1,"dispatch_status":"review_pending","output_artifacts":["src/file.go"],"artifact_path":"C:/artifacts/loop-parent","auto_repair_count":2,"last_review_task_id":"RV-LOOP-REVIEW","files_to_modify":["src/file.go"]}`)
+
+	rw := NewReviewWorker(srv, repo, srv.logger, time.Second)
+
+	// Only process results (skip pending tasks to avoid interference)
+	if err := rw.processReviewResults(ctx); err != nil {
+		t.Fatalf("processReviewResults: %v", err)
+	}
+
+	parent, _ := repo.GetTaskByID(ctx, "RV-LOOP-001")
+	if parent.State != engine.StateBlocked {
+		t.Fatalf("parent should be blocked (escalated) when auto_repair_count >= limit, got state=%q", parent.State)
+	}
+}
+
+func TestReworkBlockedWhenDuplicateRejectionReason(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	sameReason := "Code has critical bug: missing imports and syntax errors in parser module."
+
+	// Review task already completed with same rejection reason
+	createCompatTask(t, repo, "RV-DUPE-REVIEW", `{"id":"RV-DUPE-REVIEW","dispatch_ref":"dispatch_compat","state":"verified","transport":"cli","wave":1,"topo_rank":1,"type":"code-review","owner_agent":"Reviewer","status":"verified","dispatch_status":"completed","review_decision":"rejected","result_summary":"`+sameReason+`","parent_task_id":"RV-DUPE-001"}`)
+
+	// Parent with same last_rejection_reason stored
+	createCompatTask(t, repo, "RV-DUPE-001", `{"id":"RV-DUPE-001","dispatch_ref":"dispatch_review","state":"review_pending","transport":"cli","wave":1,"topo_rank":1,"title":"Dupe test parent","owner_agent":"Claude","status":"review_pending","type":"integration","priority":1,"dispatch_status":"review_pending","output_artifacts":["src/file.go"],"artifact_path":"C:/artifacts/dupe-parent","auto_repair_count":1,"last_review_task_id":"RV-DUPE-REVIEW","last_rejection_reason":"`+sameReason+`","files_to_modify":["src/file.go"]}`)
+
+	rw := NewReviewWorker(srv, repo, srv.logger, time.Second)
+
+	if err := rw.processReviewResults(ctx); err != nil {
+		t.Fatalf("processReviewResults: %v", err)
+	}
+
+	parent, _ := repo.GetTaskByID(ctx, "RV-DUPE-001")
+	if parent.State != engine.StateBlocked {
+		t.Fatalf("parent should be blocked when same rejection reason repeats, got state=%q", parent.State)
+	}
+}
+
+func TestReworkTaskHasEnrichedDescription(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	createCompatTask(t, repo, "RV-ENRICH-001", `{"id":"RV-ENRICH-001","dispatch_ref":"dispatch_review","state":"review_pending","transport":"cli","wave":1,"topo_rank":1,"title":"Enrich test parent","owner_agent":"Claude","status":"review_pending","type":"integration","priority":1,"dispatch_status":"review_pending","description":"Generate product scraper with data validation","output_artifacts":["src/scraper.py"],"artifact_path":"C:/artifacts/enrich-parent","acceptance_criteria":["Create src/scraper.py","Include input validation"],"files_to_modify":["src/scraper.py"]}`)
+
+	rw := NewReviewWorker(srv, repo, srv.logger, time.Second)
+	rw.processReviewPendingTasks(ctx)
+
+	parent, _ := repo.GetTaskByID(ctx, "RV-ENRICH-001")
+	reviewTaskID := readString(decodeCompatPayload(parent.CardJSON), "last_review_task_id")
+
+	reviewPayload := `{"id":"` + reviewTaskID + `","type":"code-review","owner_agent":"Reviewer","state":"verified","dispatch_ref":"dispatch_compat","transport":"cli","wave":1,"topo_rank":1,"review_decision":"rejected","result_summary":"Missing input validation on line 42. The scraper does not handle HTTP 429 rate limiting.","parent_task_id":"RV-ENRICH-001","dispatch_status":"completed","status":"verified"}`
+	repo.UpdateTask(ctx, reviewTaskID, &store.TaskCard{CardJSON: reviewPayload, State: engine.StateVerified})
+
+	rw.processReviewResults(ctx)
+
+	// Find the rework task
+	allTasks, _ := repo.ListAllTasks(ctx)
+	for _, t2 := range allTasks {
+		p := decodeCompatPayload(t2.CardJSON)
+		if readString(p, "type") == "rework" && readString(p, "parent_task_id") == "RV-ENRICH-001" {
+			desc := readString(p, "description")
+			// Enriched description should contain defect report content
+			if !strings.Contains(desc, "Missing input validation") {
+				t.Fatalf("rework description should contain rejection reason, got: %s", desc[:200])
+			}
+			// Should contain original goal
+			if !strings.Contains(desc, "Generate product scraper") {
+				t.Fatalf("rework description should contain original goal, got: %s", desc[:200])
+			}
+			// Should contain required output artifacts
+			if !strings.Contains(desc, "src/scraper.py") {
+				t.Fatalf("rework description should contain output artifacts, got: %s", desc[:200])
+			}
+			// Should contain acceptance criteria
+			if !strings.Contains(desc, "input validation") {
+				t.Fatalf("rework description should contain acceptance criteria")
+			}
+			// Should contain attempt number
+			if !strings.Contains(desc, "Attempt 1") {
+				t.Fatalf("rework description should contain attempt number")
+			}
+			return
+		}
+	}
+	t.Fatal("expected a rework task to be created")
+}
+
+func TestDefectTicketBuildReworkDescription(t *testing.T) {
+	ticket := DefectTicket{
+		ParentTaskID:    "TS-PARENT-001",
+		ReviewTaskID:    "TS-REVIEW-001",
+		RejectionReason: "Missing error handling in parser.go line 42",
+		ArtifactPath:    "/artifacts/TS-PARENT-001",
+		OriginalGoal:    "Build a JSON parser with error handling",
+		OutputArtifacts: []string{"src/parser.go", "tests/parser_test.go"},
+		AcceptCriteria:  []string{"All errors handled explicitly", "No panics on invalid input"},
+		RepairAttempt:   1,
+	}
+
+	desc := buildReworkDescription(ticket)
+
+	checks := []string{
+		"Attempt 1/2",
+		"Missing error handling",
+		"Build a JSON parser",
+		"/artifacts/TS-PARENT-001",
+		"src/parser.go",
+		"tests/parser_test.go",
+		"All errors handled",
+		"No panics",
+	}
+	for _, want := range checks {
+		if !strings.Contains(desc, want) {
+			t.Errorf("rework description missing %q\nGot: %s", want, desc[:min(len(desc), 300)])
+		}
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
