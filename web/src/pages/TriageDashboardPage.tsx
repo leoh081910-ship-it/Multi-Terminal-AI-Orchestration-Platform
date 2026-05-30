@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, CheckCircle, RefreshCw, XCircle,
   ChevronDown, ChevronRight, FileText, GitBranch,
   Clock, GitCommit, Wrench, Search as SearchIcon,
+  ArrowUpDown, Filter,
 } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
 import { useProject } from '../hooks/useProject';
@@ -90,6 +91,37 @@ function useToast() {
   return { toasts, addToast, dismiss };
 }
 
+/* ── Filter / Sort types ── */
+
+type StatusFilter = 'all' | 'blocked' | 'triage' | 'verify_failed';
+type SortField = 'updated_at' | 'rework_count';
+type SortDir = 'desc' | 'asc';
+
+const STATUS_TABS: { key: StatusFilter; label: string; color: string }[] = [
+  { key: 'all', label: 'All', color: '#888' },
+  { key: 'blocked', label: 'Blocked', color: '#ef4444' },
+  { key: 'triage', label: 'Triage', color: '#f59e0b' },
+  { key: 'verify_failed', label: 'Verify Failed', color: '#f97316' },
+];
+
+const tabBtn = (active: boolean, color: string): React.CSSProperties => ({
+  ...btn,
+  background: active ? color : 'rgba(255,255,255,0.06)',
+  color: active ? '#fff' : '#aaa',
+  fontSize: '0.8rem',
+  padding: '0.4rem 0.8rem',
+});
+
+const inputStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
+  borderRadius: 8,
+  color: '#fff',
+  padding: '0.5rem 0.8rem',
+  fontSize: '0.85rem',
+  outline: 'none',
+};
+
 /* ── Main Page ── */
 
 export default function TriageDashboardPage() {
@@ -100,6 +132,10 @@ export default function TriageDashboardPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [timelineTaskId, setTimelineTaskId] = useState<string | null>(null);
   const [batchResults, setBatchResults] = useState<TriageBatchResult[] | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<SortField>('updated_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const { toasts, addToast, dismiss } = useToast();
 
   const { data: tasks, isLoading, error } = useQuery({
@@ -172,12 +208,53 @@ export default function TriageDashboardPage() {
     });
   }, []);
 
+  // Filter + sort tasks client-side (must be before toggleAll which depends on it)
+  const filteredTasks = useMemo(() => {
+    let list = tasks || [];
+
+    if (statusFilter !== 'all') {
+      list = list.filter(t => t.status === statusFilter);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(t =>
+        t.id.toLowerCase().includes(q) ||
+        (t.parent_task_id || '').toLowerCase().includes(q) ||
+        (t.root_task_id || '').toLowerCase().includes(q) ||
+        (t.failure_code || '').toLowerCase().includes(q) ||
+        t.title.toLowerCase().includes(q)
+      );
+    }
+
+    const sorted = [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'updated_at') {
+        cmp = (a.updated_at || '').localeCompare(b.updated_at || '');
+      } else if (sortField === 'rework_count') {
+        cmp = (a.rework_count || 0) - (b.rework_count || 0);
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+
+    return sorted;
+  }, [tasks, statusFilter, searchQuery, sortField, sortDir]);
+
   const toggleAll = useCallback(() => {
-    if (!tasks) return;
-    setSelected(prev =>
-      prev.size === tasks.length ? new Set() : new Set(tasks.map(t => t.id))
-    );
-  }, [tasks]);
+    if (filteredTasks.length === 0) return;
+    const allIds = filteredTasks.map(t => t.id);
+    setSelected(prev => {
+      const allInSet = allIds.every(id => prev.has(id));
+      if (allInSet) {
+        // Deselect only the filtered ones
+        const next = new Set(prev);
+        allIds.forEach(id => next.delete(id));
+        return next;
+      }
+      // Select all filtered
+      return new Set([...prev, ...allIds]);
+    });
+  }, [filteredTasks]);
 
   const anyLoading = approveMut.isPending || retryMut.isPending || wontfixMut.isPending || batchMut.isPending;
 
@@ -186,18 +263,81 @@ export default function TriageDashboardPage() {
   if (error) return <div style={{ padding: 40, color: '#ef4444' }}>加载失败: {(error as Error).message}</div>;
 
   const triageTasks = tasks || [];
-  const allSelected = selected.size > 0 && selected.size === triageTasks.length;
+  const allFilteredSelected = filteredTasks.length > 0 && filteredTasks.every(t => selected.has(t.id));
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem' }}>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1rem' }}>
         <AlertTriangle size={28} color="#f59e0b" />
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Triage Dashboard</h1>
         <span style={{ ...badge('blocked'), marginLeft: 'auto' }}>{triageTasks.length} 待处理</span>
       </div>
+
+      {/* Toolbar: tabs + search + sort */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: '1rem' }}>
+        {/* Status tabs */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {STATUS_TABS.map(tab => {
+            const count = tab.key === 'all' ? triageTasks.length : triageTasks.filter(t => t.status === tab.key).length;
+            return (
+              <button key={tab.key} style={tabBtn(statusFilter === tab.key, tab.color)}
+                onClick={() => setStatusFilter(tab.key)}>
+                {tab.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search */}
+        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+          <SearchIcon size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
+          <input
+            data-testid="triage-search"
+            type="text"
+            placeholder="Search task_id, parent, root, failure_code..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ ...inputStyle, width: '100%', paddingLeft: 32 }}
+          />
+        </div>
+
+        {/* Sort */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ArrowUpDown size={14} color="#888" />
+          <select
+            data-testid="triage-sort-field"
+            value={sortField}
+            onChange={e => setSortField(e.target.value as SortField)}
+            style={{ ...inputStyle, padding: '0.4rem 0.6rem', cursor: 'pointer' }}
+          >
+            <option value="updated_at">Updated</option>
+            <option value="rework_count">Rework #</option>
+          </select>
+          <button
+            data-testid="triage-sort-dir"
+            style={{ ...btnGhost, padding: '0.4rem 0.6rem' }}
+            onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+          >
+            {sortDir === 'desc' ? '↓' : '↑'}
+          </button>
+        </div>
+      </div>
+
+      {/* Filtered count indicator */}
+      {(statusFilter !== 'all' || searchQuery.trim()) && (
+        <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Filter size={14} />
+          Showing {filteredTasks.length} of {triageTasks.length} tasks
+          {selected.size > 0 && <span style={{ color: '#3b82f6' }}>· {selected.size} selected (across all filters)</span>}
+          <button style={{ ...btnGhost, padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+            onClick={() => { setStatusFilter('all'); setSearchQuery(''); }}>
+            Clear filters
+          </button>
+        </div>
+      )}
 
       {/* Batch result detail panel */}
       {batchResults && (
@@ -256,11 +396,16 @@ export default function TriageDashboardPage() {
         />
       )}
 
-      {triageTasks.length === 0 ? (
+      {filteredTasks.length === 0 ? (
         <div data-testid="triage-empty-state" style={{ ...card, textAlign: 'center', padding: '3rem', color: '#888' }}>
-          <CheckCircle size={48} color="#22c55e" style={{ marginBottom: 12 }} />
-          <p style={{ fontSize: '1.1rem', margin: 0 }}>没有需要人工介入的任务</p>
-          <p style={{ fontSize: '0.85rem', marginTop: 8 }}>所有任务都在自动处理中</p>
+          {triageTasks.length === 0
+            ? <><CheckCircle size={48} color="#22c55e" style={{ marginBottom: 12 }} />
+               <p style={{ fontSize: '1.1rem', margin: 0 }}>没有需要人工介入的任务</p>
+               <p style={{ fontSize: '0.85rem', marginTop: 8 }}>所有任务都在自动处理中</p></>
+            : <><SearchIcon size={48} color="#555" style={{ marginBottom: 12 }} />
+               <p style={{ fontSize: '1.1rem', margin: 0 }}>No tasks match current filters</p>
+               <p style={{ fontSize: '0.85rem', marginTop: 8 }}>Try adjusting status tab or search query</p></>
+          }
         </div>
       ) : (
         <>
@@ -269,15 +414,17 @@ export default function TriageDashboardPage() {
             <input
               data-testid="triage-select-all"
               type="checkbox"
-              checked={allSelected}
+              checked={allFilteredSelected}
               onChange={toggleAll}
               style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
             />
-            <span style={{ fontSize: '0.8rem', color: '#888' }}>全选</span>
+            <span style={{ fontSize: '0.8rem', color: '#888' }}>
+              全选当前筛选 ({filteredTasks.length})
+            </span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {triageTasks.map(task => (
+            {filteredTasks.map(task => (
               <TriageCard
                 key={task.id}
                 task={task}
