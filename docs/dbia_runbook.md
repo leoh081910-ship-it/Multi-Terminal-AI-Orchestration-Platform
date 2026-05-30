@@ -213,6 +213,15 @@ The `.gitignore` already excludes `*.log` and `.orchestrator/` directories.
 
 ```powershell
 cd "E:\vibe coding\Projects\workflow-library-system\scripts"
+
+# Exact tag match (recommended):
+python dbia_release_check.py --tag v0.6.1-dbia-release-stability
+
+# Or via env var:
+$env:EXPECTED_TAG = "v0.6.1-dbia-release-stability"
+python dbia_release_check.py
+
+# Fallback (glob match — may accept stale tags):
 python dbia_release_check.py
 ```
 
