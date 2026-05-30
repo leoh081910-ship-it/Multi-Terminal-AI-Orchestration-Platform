@@ -139,6 +139,83 @@ func TestCompatTriageBatchWonFixTransitionsPayloadState(t *testing.T) {
 	})
 }
 
+func TestCompatTriageLineageReturnsRootTimeline(t *testing.T) {
+	srv, repo, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	createCompatTask(t, repo, "TRIAGE-LINEAGE-ROOT", `{"id":"TRIAGE-LINEAGE-ROOT","project_id":"default","dispatch_ref":"dispatch_triage","state":"blocked","transport":"cli","wave":1,"topo_rank":1,"title":"Root task","owner_agent":"Claude","status":"blocked","type":"integration","priority":1,"root_task_id":"TRIAGE-LINEAGE-ROOT","dispatch_status":"failed","result_summary":"root summary"}`)
+	createCompatTask(t, repo, "TRIAGE-LINEAGE-REVIEW", `{"id":"TRIAGE-LINEAGE-REVIEW","project_id":"default","dispatch_ref":"dispatch_triage","state":"done","transport":"cli","wave":1,"topo_rank":2,"title":"Review task","owner_agent":"Reviewer","status":"done","type":"code-review","priority":1,"parent_task_id":"TRIAGE-LINEAGE-ROOT","root_task_id":"TRIAGE-LINEAGE-ROOT","review_decision":"rejected","result_summary":"review found missing validation"}`)
+	createCompatTask(t, repo, "TRIAGE-LINEAGE-REWORK", `{"id":"TRIAGE-LINEAGE-REWORK","project_id":"default","dispatch_ref":"dispatch_triage","state":"retry_waiting","transport":"cli","wave":1,"topo_rank":3,"title":"Rework task","owner_agent":"Claude","status":"ready","type":"rework","priority":1,"parent_task_id":"TRIAGE-LINEAGE-ROOT","root_task_id":"TRIAGE-LINEAGE-ROOT","result_summary":"rework generated"}`)
+	createCompatTask(t, repo, "TRIAGE-LINEAGE-TRIAGE", `{"id":"TRIAGE-LINEAGE-TRIAGE","project_id":"default","dispatch_ref":"dispatch_triage","state":"blocked","transport":"cli","wave":1,"topo_rank":4,"title":"Manual triage","owner_agent":"Claude","status":"blocked","type":"triage","priority":1,"parent_task_id":"TRIAGE-LINEAGE-ROOT","root_task_id":"TRIAGE-LINEAGE-ROOT","result_summary":"manual escalation"}`)
+	createCompatTask(t, repo, "TRIAGE-LINEAGE-OTHER", `{"id":"TRIAGE-LINEAGE-OTHER","project_id":"default","dispatch_ref":"dispatch_triage","state":"blocked","transport":"cli","wave":1,"topo_rank":5,"title":"Other root","owner_agent":"Claude","status":"blocked","type":"integration","priority":1,"root_task_id":"TRIAGE-LINEAGE-OTHER"}`)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/default/triage/tasks/TRIAGE-LINEAGE-REVIEW/lineage", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected lineage status %d, got %d body=%s", http.StatusOK, res.Code, res.Body.String())
+	}
+
+	var got triageLineageResponse
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal lineage response: %v", err)
+	}
+	if got.Original == nil {
+		t.Fatalf("expected original timeline entry, got nil; body=%s", res.Body.String())
+	}
+	if got.Original.TaskID != "TRIAGE-LINEAGE-ROOT" {
+		t.Fatalf("original task_id = %q, want TRIAGE-LINEAGE-ROOT", got.Original.TaskID)
+	}
+	if len(got.Timeline) != 4 {
+		t.Fatalf("timeline length = %d, want 4; timeline=%#v", len(got.Timeline), got.Timeline)
+	}
+
+	wantTypes := map[string]string{
+		"TRIAGE-LINEAGE-ROOT":   "original",
+		"TRIAGE-LINEAGE-REVIEW": "review",
+		"TRIAGE-LINEAGE-REWORK": "rework",
+		"TRIAGE-LINEAGE-TRIAGE": "triage",
+	}
+	seen := make(map[string]triageTimelineEntry, len(got.Timeline))
+	for _, entry := range got.Timeline {
+		seen[entry.TaskID] = entry
+		if wantType, ok := wantTypes[entry.TaskID]; ok && entry.Type != wantType {
+			t.Fatalf("entry %s type = %q, want %q", entry.TaskID, entry.Type, wantType)
+		}
+		if entry.TaskID == "TRIAGE-LINEAGE-OTHER" {
+			t.Fatalf("lineage response included unrelated root task")
+		}
+		if entry.CreatedAt == "" || entry.UpdatedAt == "" {
+			t.Fatalf("entry %s missing timestamps: %#v", entry.TaskID, entry)
+		}
+	}
+	for id := range wantTypes {
+		if _, ok := seen[id]; !ok {
+			t.Fatalf("timeline missing %s; timeline=%#v", id, got.Timeline)
+		}
+	}
+	if seen["TRIAGE-LINEAGE-REVIEW"].Decision != "rejected" {
+		t.Fatalf("review decision = %q, want rejected", seen["TRIAGE-LINEAGE-REVIEW"].Decision)
+	}
+	if seen["TRIAGE-LINEAGE-REVIEW"].Summary != "review found missing validation" {
+		t.Fatalf("review summary = %q, want review found missing validation", seen["TRIAGE-LINEAGE-REVIEW"].Summary)
+	}
+}
+
+func TestCompatTriageLineageMissingTaskReturnsNotFound(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/default/triage/tasks/TRIAGE-LINEAGE-MISSING/lineage", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected missing lineage status %d, got %d body=%s", http.StatusNotFound, res.Code, res.Body.String())
+	}
+}
+
 func assertCompatTaskStateAndPayload(t *testing.T, repo compatTaskGetter, taskID string, wantState string, wantPayload map[string]interface{}) {
 	t.Helper()
 
