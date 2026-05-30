@@ -322,3 +322,14 @@ export interface AgentCallRecord {
   finished_at: string;
   created_at: string;
 }
+
+// ── Triage Dashboard types ──
+
+export interface TriageTask extends ScheduledTask {
+  review_decision?: string;
+  result_summary?: string;
+  escalation_reason?: string;
+  last_rejection_reason?: string;
+  rework_count?: number;
+  lineage?: TaskLineage;
+}

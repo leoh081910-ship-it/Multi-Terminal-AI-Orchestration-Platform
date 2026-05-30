@@ -61,6 +61,8 @@ var validTransitions = map[string]map[string]bool{
 	StateTriage: {
 		StateRetryWaiting: true, // triage complete, remediation created
 		StateFailed:       true, // non-retryable, give up
+		StateVerified:     true, // manual triage: approve
+		StateDone:         true, // manual triage: won't fix
 	},
 	StateReviewPending: {
 		StateVerified:     true, // review passed
@@ -74,6 +76,8 @@ var validTransitions = map[string]map[string]bool{
 	StateVerifyFailed: {
 		StateRetryWaiting: true,
 		StateFailed:       true,
+		StateVerified:     true, // manual triage: approve
+		StateDone:         true, // manual triage: won't fix
 	},
 	StateVerified: {
 		StateMerged:      true,
@@ -101,8 +105,11 @@ var validTransitions = map[string]map[string]bool{
 		StateFailed: true, // user rejected decomposition
 	},
 	StateBlocked: {
-		StateQueued:  true, // blocker resolved, back to queued
-		StateFailed:  true, // timed out or manually failed
+		StateQueued:      true, // blocker resolved, back to queued
+		StateFailed:      true, // timed out or manually failed
+		StateVerified:    true, // manual triage: approve
+		StateDone:        true, // manual triage: won't fix
+		StateRetryWaiting: true, // manual triage: retry
 	},
 }
 

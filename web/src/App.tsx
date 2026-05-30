@@ -13,6 +13,7 @@ import KnowledgeSpacePage from './pages/KnowledgeSpacePage';
 import TaskDetailPage from './pages/TaskDetailPage';
 import WaveManagementPage from './pages/WaveManagementPage';
 import EventLogPage from './pages/EventLogPage';
+import TriageDashboardPage from './pages/TriageDashboardPage';
 import './styles/global.css';
 
 const queryClient = new QueryClient({
@@ -35,6 +36,7 @@ function App() {
               <Route path="board" element={<SchedulerBoard />} />
               <Route path="waves" element={<WaveManagementPage />} />
               <Route path="events" element={<EventLogPage />} />
+              <Route path="triage" element={<TriageDashboardPage />} />
               <Route path="timeline" element={<TimelinePage />} />
               <Route path="goals" element={<GoalPage />} />
               <Route path="agents" element={<AgentWorkbenchPage />} />

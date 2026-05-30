@@ -41,11 +41,17 @@ func (s *Server) registerStaticWebRoutes() {
 		s.router.Handle("/assets/*", assetsFS)
 	}
 
+	serveEmptyFavicon := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}
+	s.router.Get("/favicon.ico", serveEmptyFavicon)
+	s.router.Get("/favicon.svg", serveEmptyFavicon)
+
 	serveIndex := func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, indexPath)
 	}
 
-	for _, route := range []string{"/", "/board", "/waves", "/events", "/timeline", "/goals", "/agents", "/swimlane", "/org", "/knowledge"} {
+	for _, route := range []string{"/", "/board", "/waves", "/events", "/triage", "/timeline", "/goals", "/agents", "/swimlane", "/org", "/knowledge"} {
 		s.router.Get(route, serveIndex)
 		s.router.Get(route+"/*", serveIndex)
 	}

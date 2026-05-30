@@ -16,6 +16,7 @@ import type {
   SystemWorkersResponse,
   TaskExecution,
   TaskLineage,
+  TriageTask,
   UpdateScheduledTaskInput,
 } from '../types/scheduler';
 
@@ -169,6 +170,23 @@ const mapTask = (task: BackendScheduledTask): ScheduledTask => ({
   last_heartbeat_at: task.last_heartbeat_at,
   timeout_at: task.timeout_at,
   stalled: task.stalled,
+});
+
+interface BackendTriageTask extends BackendScheduledTask {
+  review_decision?: string;
+  result_summary?: string;
+  escalation_reason?: string;
+  last_rejection_reason?: string;
+  rework_count?: number;
+}
+
+const mapTriageTask = (task: BackendTriageTask): TriageTask => ({
+  ...mapTask(task),
+  review_decision: task.review_decision,
+  result_summary: task.result_summary,
+  escalation_reason: task.escalation_reason,
+  last_rejection_reason: task.last_rejection_reason,
+  rework_count: task.rework_count,
 });
 
 const buildCurrentFocusLabel = (tasks: ScheduledTask[]): string => {
@@ -396,5 +414,25 @@ export const schedulerApi = {
   getAgentCalls: async (taskId: string): Promise<AgentCallRecord[]> => {
     const response = await client.get<{ success: boolean; data: AgentCallRecord[] }>(`/tasks/${taskId}/agent-calls`);
     return response.data.data || [];
+  },
+
+  // ── Triage Dashboard APIs ──
+
+  getTriageSummary: async (projectId: string): Promise<TriageTask[]> => {
+    const response = await client.get(`${projectBase(projectId)}/triage/summary`);
+    const data = response.data as BackendTriageTask[];
+    return data.map(mapTriageTask);
+  },
+
+  triageApprove: async (projectId: string, taskId: string): Promise<void> => {
+    await client.post(`${projectBase(projectId)}/triage/tasks/${taskId}/approve`);
+  },
+
+  triageRetry: async (projectId: string, taskId: string): Promise<void> => {
+    await client.post(`${projectBase(projectId)}/triage/tasks/${taskId}/retry`);
+  },
+
+  triageWonFix: async (projectId: string, taskId: string): Promise<void> => {
+    await client.post(`${projectBase(projectId)}/triage/tasks/${taskId}/wontfix`);
   },
 };

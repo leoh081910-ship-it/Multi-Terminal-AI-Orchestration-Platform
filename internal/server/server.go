@@ -251,6 +251,12 @@ func (s *Server) registerCompatProjectRoutes(r chi.Router) {
 		r.Get("/failure-policies", s.handleCompatGetFailurePolicies)
 		r.Get("/agents", s.handleCompatGetAgents)
 	})
+	r.Route("/triage", func(r chi.Router) {
+		r.Get("/summary", s.handleCompatTriageSummary)
+		r.Post("/tasks/{id}/approve", s.handleCompatTriageApprove)
+		r.Post("/tasks/{id}/retry", s.handleCompatTriageRetry)
+		r.Post("/tasks/{id}/wontfix", s.handleCompatTriageWonFix)
+	})
 	r.Route("/board", func(r chi.Router) {
 		r.Get("/summary", s.handleCompatBoardSummary)
 	})
@@ -1285,4 +1291,143 @@ func (s *Server) retireFailedChildren(ctx context.Context, parentTaskID string) 
 	}
 
 	return retired
+}
+
+// ── Triage Dashboard API ──
+
+type triageTaskSummary struct {
+	compatSchedulerTask
+	ReviewDecision   string             `json:"review_decision"`
+	ResultSummary    string             `json:"result_summary"`
+	EscalationReason string             `json:"escalation_reason"`
+	LastRejection    string             `json:"last_rejection_reason"`
+	ReworkCount      int                `json:"rework_count"`
+	Lineage          *compatTaskLineage `json:"lineage,omitempty"`
+}
+
+// handleCompatTriageSummary returns all tasks in blocked/triage/verify_failed state.
+// GET /api/v1/projects/{project}/triage/summary
+func (s *Server) handleCompatTriageSummary(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := s.compatProjectIDFromRequest(r)
+
+	allTasks, err := s.repo.ListAllTasks(ctx)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load tasks"})
+		return
+	}
+
+	triageStates := map[string]bool{
+		engine.StateBlocked:      true,
+		engine.StateTriage:       true,
+		engine.StateVerifyFailed: true,
+	}
+
+	var summaries []triageTaskSummary
+	for _, task := range allTasks {
+		if !s.compatTaskBelongsToProject(task, projectID) {
+			continue
+		}
+		if !triageStates[task.State] {
+			continue
+		}
+
+		mapped := s.mapCompatTask(task)
+		payload := decodeCompatPayload(task.CardJSON)
+
+		summaries = append(summaries, triageTaskSummary{
+			compatSchedulerTask: mapped,
+			ReviewDecision:      readString(payload, "review_decision"),
+			ResultSummary:       readString(payload, "result_summary"),
+			EscalationReason:    readString(payload, "escalation_reason"),
+			LastRejection:       readString(payload, "last_rejection_reason"),
+			ReworkCount:         readIntDefault(payload, 0, "auto_repair_count"),
+		})
+	}
+
+	if summaries == nil {
+		summaries = []triageTaskSummary{}
+	}
+
+	s.writeJSON(w, http.StatusOK, summaries)
+}
+
+// handleCompatTriageApprove manually approves a blocked/triage task.
+// POST /api/v1/projects/{project}/triage/tasks/{id}/approve
+func (s *Server) handleCompatTriageApprove(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil || task == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	if err := s.transitionCompatTaskState(ctx, task, engine.StateVerified, "manual_triage_approve", ""); err != nil {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"detail": err.Error()})
+		return
+	}
+
+	payload := decodeCompatPayload(task.CardJSON)
+	syncCompatPayloadState(payload, engine.StateVerified)
+	payload["coordination_stage"] = "manually_approved"
+	payload["dispatch_status"] = "completed"
+	s.persistCompatPayloadLogged(ctx, id, payload)
+
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "approved", "task_id": id})
+}
+
+// handleCompatTriageRetry resets a blocked/triage task to retry.
+// POST /api/v1/projects/{project}/triage/tasks/{id}/retry
+func (s *Server) handleCompatTriageRetry(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil || task == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	if err := s.transitionCompatTaskState(ctx, task, engine.StateRetryWaiting, "manual_triage_retry", ""); err != nil {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"detail": err.Error()})
+		return
+	}
+
+	payload := decodeCompatPayload(task.CardJSON)
+	syncCompatPayloadState(payload, engine.StateRetryWaiting)
+	payload["coordination_stage"] = "manual_retry"
+	payload["auto_repair_count"] = 0 // reset counter
+	payload["last_rejection_reason"] = ""
+	s.persistCompatPayloadLogged(ctx, id, payload)
+
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "retry", "task_id": id})
+}
+
+// handleCompatTriageWonFix marks a blocked/triage task as won't fix (done).
+// POST /api/v1/projects/{project}/triage/tasks/{id}/wontfix
+func (s *Server) handleCompatTriageWonFix(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil || task == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	if err := s.transitionCompatTaskState(ctx, task, engine.StateDone, "manual_triage_wontfix", ""); err != nil {
+		s.writeJSON(w, http.StatusConflict, map[string]string{"detail": err.Error()})
+		return
+	}
+
+	payload := decodeCompatPayload(task.CardJSON)
+	syncCompatPayloadState(payload, engine.StateDone)
+	payload["coordination_stage"] = "wont_fix"
+	payload["dispatch_status"] = "completed"
+	payload["status"] = "done"
+	s.persistCompatPayloadLogged(ctx, id, payload)
+
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "wontfix", "task_id": id})
 }

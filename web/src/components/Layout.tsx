@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet } from 'react-router-dom';
-import { FolderKanban, Kanban, Plus, Terminal, GanttChartSquare, GitBranch, Users, LayoutDashboard, Building2, BookOpen, Activity, Layers3 } from 'lucide-react';
+import { FolderKanban, Kanban, Plus, Terminal, GanttChartSquare, GitBranch, Users, LayoutDashboard, Building2, BookOpen, Activity, Layers3, AlertTriangle } from 'lucide-react';
 import { projectsApi } from '../api/projectsApi';
 import { useProject } from '../hooks/useProject';
 import type { CreateProjectInput } from '../types/project';
@@ -33,6 +33,7 @@ const Layout: React.FC = () => {
     { to: '/board', icon: <Kanban size={20} />, label: '调度看板' },
     { to: '/waves', icon: <Layers3 size={20} />, label: 'Wave 管理' },
     { to: '/events', icon: <Activity size={20} />, label: '事件日志' },
+    { to: '/triage', icon: <AlertTriangle size={20} />, label: 'Triage' },
   ];
   const secondaryNavItems = [
     { to: '/timeline', icon: <GanttChartSquare size={20} />, label: '时间线' },
