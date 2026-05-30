@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
 import { useProject } from '../hooks/useProject';
-import type { TriageTask } from '../types/scheduler';
+import type { TriageTask, TriageBatchResult } from '../types/scheduler';
 
 /* ── Styles ── */
 
@@ -25,9 +25,10 @@ const btn: React.CSSProperties = {
   cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
   transition: 'opacity 0.15s',
 };
-const btnGreen: React.CSSProperties = { ...btn, background: '#22c55e', color: '#fff' };
-const btnBlue: React.CSSProperties = { ...btn, background: '#3b82f6', color: '#fff' };
-const btnGray: React.CSSProperties = { ...btn, background: '#6b7280', color: '#fff' };
+const btnDisabled: React.CSSProperties = { ...btn, opacity: 0.5, cursor: 'not-allowed' };
+const btnGreen = (disabled: boolean): React.CSSProperties => disabled ? { ...btnDisabled, background: '#22c55e', color: '#fff' } : { ...btn, background: '#22c55e', color: '#fff' };
+const btnBlue = (disabled: boolean): React.CSSProperties => disabled ? { ...btnDisabled, background: '#3b82f6', color: '#fff' } : { ...btn, background: '#3b82f6', color: '#fff' };
+const btnGray = (disabled: boolean): React.CSSProperties => disabled ? { ...btnDisabled, background: '#6b7280', color: '#fff' } : { ...btn, background: '#6b7280', color: '#fff' };
 const btnGhost: React.CSSProperties = { ...btn, background: 'rgba(255,255,255,0.08)', color: '#ccc' };
 
 const badge = (state: string): React.CSSProperties => {
@@ -38,6 +39,57 @@ const badge = (state: string): React.CSSProperties => {
   };
 };
 
+/* ── Toast System ── */
+
+interface Toast {
+  id: number;
+  type: 'success' | 'error' | 'info';
+  message: string;
+}
+
+let toastIdCounter = 0;
+
+function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  return (
+    <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {toasts.map(t => (
+        <div key={t.id} onClick={() => onDismiss(t.id)} style={{
+          padding: '0.7rem 1.2rem', borderRadius: 8, cursor: 'pointer',
+          background: t.type === 'success' ? '#22c55e' : t.type === 'error' ? '#ef4444' : '#3b82f6',
+          color: '#fff', fontSize: '0.85rem', fontWeight: 600,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)', maxWidth: 400,
+          animation: 'fadeIn 0.2s ease-out',
+        }}>
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const addToast = useCallback((type: Toast['type'], message: string) => {
+    const id = ++toastIdCounter;
+    setToasts(prev => [...prev, { id, type, message }]);
+    const timer = setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+      timers.current.delete(id);
+    }, 4000);
+    timers.current.set(id, timer);
+  }, []);
+
+  const dismiss = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+    const timer = timers.current.get(id);
+    if (timer) { clearTimeout(timer); timers.current.delete(id); }
+  }, []);
+
+  return { toasts, addToast, dismiss };
+}
+
 /* ── Main Page ── */
 
 export default function TriageDashboardPage() {
@@ -47,6 +99,8 @@ export default function TriageDashboardPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [timelineTaskId, setTimelineTaskId] = useState<string | null>(null);
+  const [batchResults, setBatchResults] = useState<TriageBatchResult[] | null>(null);
+  const { toasts, addToast, dismiss } = useToast();
 
   const { data: tasks, isLoading, error } = useQuery({
     queryKey: ['triage-summary', projectId],
@@ -55,22 +109,59 @@ export default function TriageDashboardPage() {
     refetchInterval: 10000,
   });
 
+  // Auto-clean selected when tasks change (removed tasks no longer exist)
+  useEffect(() => {
+    if (!tasks) return;
+    const validIds = new Set(tasks.map(t => t.id));
+    setSelected(prev => {
+      const next = new Set([...prev].filter(id => validIds.has(id)));
+      return next.size !== prev.size ? next : prev;
+    });
+  }, [tasks]);
+
   const approveMut = useMutation({
     mutationFn: (id: string) => schedulerApi.triageApprove(projectId!, id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['triage-summary'] }); setSelected(new Set()); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['triage-summary'] });
+      setSelected(new Set());
+      addToast('success', 'Task approved');
+    },
+    onError: (err) => addToast('error', `Failed to approve: ${(err as Error).message}`),
   });
   const retryMut = useMutation({
     mutationFn: (id: string) => schedulerApi.triageRetry(projectId!, id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['triage-summary'] }); setSelected(new Set()); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['triage-summary'] });
+      setSelected(new Set());
+      addToast('success', 'Task queued for retry');
+    },
+    onError: (err) => addToast('error', `Failed to retry: ${(err as Error).message}`),
   });
   const wontfixMut = useMutation({
     mutationFn: (id: string) => schedulerApi.triageWonFix(projectId!, id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['triage-summary'] }); setSelected(new Set()); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['triage-summary'] });
+      setSelected(new Set());
+      addToast('info', "Marked as won't fix");
+    },
+    onError: (err) => addToast('error', `Failed: ${(err as Error).message}`),
   });
   const batchMut = useMutation({
     mutationFn: ({ ids, action }: { ids: string[]; action: 'approve' | 'retry' | 'wontfix' }) =>
       schedulerApi.triageBatch(projectId!, ids, action),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['triage-summary'] }); setSelected(new Set()); },
+    onSuccess: (results, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['triage-summary'] });
+      setSelected(new Set());
+      setBatchResults(results);
+      const okCount = results.filter(r => r.status === 'ok').length;
+      const errCount = results.length - okCount;
+      if (errCount === 0) {
+        addToast('success', `Batch ${vars.action}: ${okCount}/${results.length} succeeded`);
+      } else {
+        addToast('error', `Batch ${vars.action}: ${okCount} ok, ${errCount} failed`);
+      }
+    },
+    onError: (err) => addToast('error', `Batch failed: ${(err as Error).message}`),
   });
 
   const toggleSelect = useCallback((id: string) => {
@@ -88,22 +179,48 @@ export default function TriageDashboardPage() {
     );
   }, [tasks]);
 
+  const anyLoading = approveMut.isPending || retryMut.isPending || wontfixMut.isPending || batchMut.isPending;
+
   if (!projectId) return <div style={{ padding: 40, color: '#888' }}>选择一个项目以查看 Triage 面板</div>;
   if (isLoading) return <div style={{ padding: 40, color: '#888' }}>加载中...</div>;
   if (error) return <div style={{ padding: 40, color: '#ef4444' }}>加载失败: {(error as Error).message}</div>;
 
   const triageTasks = tasks || [];
   const allSelected = selected.size > 0 && selected.size === triageTasks.length;
-  const batchLoading = batchMut.isPending;
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem' }}>
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
         <AlertTriangle size={28} color="#f59e0b" />
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Triage Dashboard</h1>
         <span style={{ ...badge('blocked'), marginLeft: 'auto' }}>{triageTasks.length} 待处理</span>
       </div>
+
+      {/* Batch result detail panel */}
+      {batchResults && (
+        <div style={{ ...card, marginBottom: 16, background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>批量操作结果</span>
+            <button style={{ ...btnGhost, padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+              onClick={() => setBatchResults(null)}>✕</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {batchResults.map(r => (
+              <div key={r.task_id} style={{ display: 'flex', gap: 8, fontSize: '0.8rem', alignItems: 'center' }}>
+                {r.status === 'ok'
+                  ? <CheckCircle size={14} color="#22c55e" />
+                  : <XCircle size={14} color="#ef4444" />}
+                <code style={{ color: '#60a5fa' }}>{r.task_id}</code>
+                <span style={{ color: r.status === 'ok' ? '#22c55e' : '#ef4444' }}>{r.status}</span>
+                {r.detail && <span style={{ color: '#888' }}>— {r.detail}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Batch action bar */}
       {selected.size > 0 && (
@@ -112,15 +229,15 @@ export default function TriageDashboardPage() {
           background: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.2)',
         }}>
           <span style={{ fontWeight: 600 }}>已选 {selected.size} 项</span>
-          <button style={btnGreen} disabled={batchLoading}
+          <button style={btnGreen(batchMut.isPending)} disabled={batchMut.isPending}
             onClick={() => batchMut.mutate({ ids: [...selected], action: 'approve' })}>
             <CheckCircle size={16} /> 批量 Approve
           </button>
-          <button style={btnBlue} disabled={batchLoading}
+          <button style={btnBlue(batchMut.isPending)} disabled={batchMut.isPending}
             onClick={() => batchMut.mutate({ ids: [...selected], action: 'retry' })}>
             <RefreshCw size={16} /> 批量 Retry
           </button>
-          <button style={btnGray} disabled={batchLoading}
+          <button style={btnGray(batchMut.isPending)} disabled={batchMut.isPending}
             onClick={() => batchMut.mutate({ ids: [...selected], action: 'wontfix' })}>
             <XCircle size={16} /> 批量 Won't Fix
           </button>
@@ -173,7 +290,7 @@ export default function TriageDashboardPage() {
                 onWonFix={() => wontfixMut.mutate(task.id)}
                 onViewDetail={() => navigate(`/tasks/${task.id}`)}
                 onViewTimeline={() => setTimelineTaskId(task.id)}
-                actionLoading={approveMut.isPending || retryMut.isPending || wontfixMut.isPending}
+                actionLoading={anyLoading}
               />
             ))}
           </div>
@@ -268,13 +385,13 @@ function TriageCard({
 
           {/* Actions */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button style={btnGreen} onClick={onApprove} disabled={actionLoading}>
+            <button style={btnGreen(actionLoading)} onClick={onApprove} disabled={actionLoading}>
               <CheckCircle size={16} /> Approve Manually
             </button>
-            <button style={btnBlue} onClick={onRetry} disabled={actionLoading}>
+            <button style={btnBlue(actionLoading)} onClick={onRetry} disabled={actionLoading}>
               <RefreshCw size={16} /> Retry
             </button>
-            <button style={btnGray} onClick={onWonFix} disabled={actionLoading}>
+            <button style={btnGray(actionLoading)} onClick={onWonFix} disabled={actionLoading}>
               <XCircle size={16} /> Won't Fix
             </button>
             <button style={btnGhost} onClick={onViewTimeline}>
@@ -304,7 +421,7 @@ function TimelinePanel({ projectId, taskId, onClose }: {
   taskId: string;
   onClose: () => void;
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['triage-lineage', projectId, taskId],
     queryFn: () => schedulerApi.getTriageLineage(projectId, taskId),
     enabled: !!projectId && !!taskId,
@@ -330,9 +447,18 @@ function TimelinePanel({ projectId, taskId, onClose }: {
       </div>
 
       {isLoading ? (
-        <div style={{ color: '#888', padding: 12 }}>Loading timeline...</div>
+        <div style={{ color: '#888', padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <RefreshCw size={16} className="animate-spin" />
+          Loading timeline...
+        </div>
+      ) : error ? (
+        <div style={{ color: '#ef4444', padding: 12 }}>
+          Failed to load timeline: {(error as Error).message}
+        </div>
       ) : !data || data.timeline.length === 0 ? (
-        <div style={{ color: '#888', padding: 12 }}>No timeline data</div>
+        <div style={{ color: '#888', padding: 12, textAlign: 'center' }}>
+          No timeline data available for this task.
+        </div>
       ) : (
         <div style={{ position: 'relative', paddingLeft: 28 }}>
           {/* Vertical line */}
