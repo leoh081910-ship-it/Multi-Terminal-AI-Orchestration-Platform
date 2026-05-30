@@ -90,6 +90,42 @@ test.describe('Triage Dashboard', () => {
     await expect(page.locator('text=已选 1 项')).toBeVisible({ timeout: 5000 });
   });
 
+  test('group mode renders grouped task sections', async ({ page }) => {
+    const emptyState = page.getByTestId('triage-empty-state');
+    const isEmpty = await emptyState.isVisible().catch(() => false);
+    if (isEmpty) {
+      test.skip();
+      return;
+    }
+
+    await page.getByTestId('triage-group-mode').selectOption('status');
+    await expect(page.getByTestId('triage-task-group-header').first()).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId('triage-group-mode').selectOption('failure_code');
+    await expect(page.getByTestId('triage-task-group-header').first()).toBeVisible({ timeout: 5000 });
+  });
+
+  test('wontfix actions require confirmation', async ({ page }) => {
+    const emptyState = page.getByTestId('triage-empty-state');
+    const isEmpty = await emptyState.isVisible().catch(() => false);
+    if (isEmpty) {
+      test.skip();
+      return;
+    }
+
+    await page.getByTestId('triage-task-expand').first().click();
+    await page.getByRole('button', { name: "Won't Fix" }).first().click();
+    await expect(page.getByTestId('wontfix-confirm-dialog')).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('wontfix-cancel').click();
+    await expect(page.getByTestId('wontfix-confirm-dialog')).toBeHidden();
+
+    await page.getByTestId('triage-task-checkbox').first().click();
+    await page.getByRole('button', { name: /批量 Won't Fix/ }).click();
+    await expect(page.getByTestId('wontfix-confirm-dialog')).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('wontfix-cancel').click();
+    await expect(page.getByTestId('wontfix-confirm-dialog')).toBeHidden();
+  });
+
   test('expand task card shows details', async ({ page }) => {
     const emptyState = page.getByTestId('triage-empty-state');
     const isEmpty = await emptyState.isVisible().catch(() => false);

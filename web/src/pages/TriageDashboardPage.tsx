@@ -5,7 +5,7 @@ import {
   AlertTriangle, CheckCircle, RefreshCw, XCircle,
   ChevronDown, ChevronRight, FileText, GitBranch,
   Clock, GitCommit, Wrench, Search as SearchIcon,
-  ArrowUpDown, Filter,
+  ArrowUpDown, Filter, Layers,
 } from 'lucide-react';
 import { schedulerApi } from '../api/schedulerApi';
 import { useProject } from '../hooks/useProject';
@@ -96,6 +96,12 @@ function useToast() {
 type StatusFilter = 'all' | 'blocked' | 'triage' | 'verify_failed';
 type SortField = 'updated_at' | 'rework_count';
 type SortDir = 'desc' | 'asc';
+type GroupMode = 'none' | 'status' | 'failure_code';
+
+interface WontFixConfirmation {
+  ids: string[];
+  mode: 'single' | 'batch';
+}
 
 const STATUS_TABS: { key: StatusFilter; label: string; color: string }[] = [
   { key: 'all', label: 'All', color: '#888' },
@@ -136,6 +142,8 @@ export default function TriageDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('updated_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [groupMode, setGroupMode] = useState<GroupMode>('none');
+  const [wontFixConfirmation, setWontFixConfirmation] = useState<WontFixConfirmation | null>(null);
   const { toasts, addToast, dismiss } = useToast();
 
   const { data: tasks, isLoading, error } = useQuery({
@@ -200,6 +208,22 @@ export default function TriageDashboardPage() {
     onError: (err) => addToast('error', `Batch failed: ${(err as Error).message}`),
   });
 
+  const requestWontFix = useCallback((ids: string[], mode: WontFixConfirmation['mode']) => {
+    if (ids.length === 0) return;
+    setWontFixConfirmation({ ids, mode });
+  }, []);
+
+  const confirmWontFix = useCallback(() => {
+    if (!wontFixConfirmation) return;
+    const ids = wontFixConfirmation.ids;
+    setWontFixConfirmation(null);
+    if (ids.length === 1) {
+      wontfixMut.mutate(ids[0]);
+      return;
+    }
+    batchMut.mutate({ ids, action: 'wontfix' });
+  }, [batchMut, wontFixConfirmation, wontfixMut]);
+
   const toggleSelect = useCallback((id: string) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -240,6 +264,29 @@ export default function TriageDashboardPage() {
     return sorted;
   }, [tasks, statusFilter, searchQuery, sortField, sortDir]);
 
+  const groupedTasks = useMemo(() => {
+    if (groupMode === 'none') {
+      return [{ key: 'all', label: 'All Tasks', countLabel: `${filteredTasks.length}`, tasks: filteredTasks }];
+    }
+
+    const groups = new Map<string, TriageTask[]>();
+    for (const task of filteredTasks) {
+      const key = groupMode === 'status'
+        ? task.status
+        : task.failure_code || 'No failure code';
+      const current = groups.get(key) || [];
+      current.push(task);
+      groups.set(key, current);
+    }
+
+    return Array.from(groups.entries()).map(([key, group]) => ({
+      key,
+      label: groupMode === 'status' ? key : key,
+      countLabel: `${group.length}`,
+      tasks: group,
+    }));
+  }, [filteredTasks, groupMode]);
+
   const toggleAll = useCallback(() => {
     if (filteredTasks.length === 0) return;
     const allIds = filteredTasks.map(t => t.id);
@@ -264,6 +311,23 @@ export default function TriageDashboardPage() {
 
   const triageTasks = tasks || [];
   const allFilteredSelected = filteredTasks.length > 0 && filteredTasks.every(t => selected.has(t.id));
+
+  const renderTaskCard = (task: TriageTask) => (
+    <TriageCard
+      key={task.id}
+      task={task}
+      selected={selected.has(task.id)}
+      expanded={expandedId === task.id}
+      onToggleSelect={() => toggleSelect(task.id)}
+      onToggleExpand={() => setExpandedId(expandedId === task.id ? null : task.id)}
+      onApprove={() => approveMut.mutate(task.id)}
+      onRetry={() => retryMut.mutate(task.id)}
+      onWonFix={() => requestWontFix([task.id], 'single')}
+      onViewDetail={() => navigate(`/tasks/${task.id}`)}
+      onViewTimeline={() => setTimelineTaskId(task.id)}
+      actionLoading={anyLoading}
+    />
+  );
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem' }}>
@@ -324,6 +388,21 @@ export default function TriageDashboardPage() {
             {sortDir === 'desc' ? '↓' : '↑'}
           </button>
         </div>
+
+        {/* Group */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Layers size={14} color="#888" />
+          <select
+            data-testid="triage-group-mode"
+            value={groupMode}
+            onChange={e => setGroupMode(e.target.value as GroupMode)}
+            style={{ ...inputStyle, padding: '0.4rem 0.6rem', cursor: 'pointer' }}
+          >
+            <option value="none">Flat</option>
+            <option value="status">Group by Status</option>
+            <option value="failure_code">Group by Failure</option>
+          </select>
+        </div>
       </div>
 
       {/* Filtered count indicator */}
@@ -378,7 +457,7 @@ export default function TriageDashboardPage() {
             <RefreshCw size={16} /> 批量 Retry
           </button>
           <button style={btnGray(batchMut.isPending)} disabled={batchMut.isPending}
-            onClick={() => batchMut.mutate({ ids: [...selected], action: 'wontfix' })}>
+            onClick={() => requestWontFix([...selected], 'batch')}>
             <XCircle size={16} /> 批量 Won't Fix
           </button>
           <button style={{ ...btnGhost, marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>
@@ -393,6 +472,16 @@ export default function TriageDashboardPage() {
           projectId={projectId}
           taskId={timelineTaskId}
           onClose={() => setTimelineTaskId(null)}
+        />
+      )}
+
+      {wontFixConfirmation && (
+        <WontFixConfirmDialog
+          count={wontFixConfirmation.ids.length}
+          mode={wontFixConfirmation.mode}
+          loading={anyLoading}
+          onCancel={() => setWontFixConfirmation(null)}
+          onConfirm={confirmWontFix}
         />
       )}
 
@@ -423,26 +512,75 @@ export default function TriageDashboardPage() {
             </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {filteredTasks.map(task => (
-              <TriageCard
-                key={task.id}
-                task={task}
-                selected={selected.has(task.id)}
-                expanded={expandedId === task.id}
-                onToggleSelect={() => toggleSelect(task.id)}
-                onToggleExpand={() => setExpandedId(expandedId === task.id ? null : task.id)}
-                onApprove={() => approveMut.mutate(task.id)}
-                onRetry={() => retryMut.mutate(task.id)}
-                onWonFix={() => wontfixMut.mutate(task.id)}
-                onViewDetail={() => navigate(`/tasks/${task.id}`)}
-                onViewTimeline={() => setTimelineTaskId(task.id)}
-                actionLoading={anyLoading}
-              />
-            ))}
-          </div>
+          {groupMode === 'none' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {filteredTasks.map(renderTaskCard)}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {groupedTasks.map(group => (
+                <section key={group.key} data-testid="triage-task-group" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div data-testid="triage-task-group-header" style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    color: '#ddd', fontWeight: 700, fontSize: '0.9rem',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 6,
+                  }}>
+                    <span>{group.label}</span>
+                    <span style={{ ...badge(group.key), background: 'rgba(255,255,255,0.12)' }}>{group.countLabel}</span>
+                  </div>
+                  {group.tasks.map(renderTaskCard)}
+                </section>
+              ))}
+            </div>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+/* ── Confirmation Dialog ── */
+
+function WontFixConfirmDialog({ count, mode, loading, onCancel, onConfirm }: {
+  count: number;
+  mode: 'single' | 'batch';
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isBatch = mode === 'batch' || count > 1;
+  return (
+    <div
+      data-testid="wontfix-confirm-dialog"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1200,
+        background: 'rgba(0,0,0,0.58)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div style={{ ...card, width: 'min(460px, 100%)', background: '#111827', boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <XCircle size={22} color="#f59e0b" />
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Confirm Won't Fix</h2>
+        </div>
+        <p style={{ color: '#cbd5e1', lineHeight: 1.5, marginTop: 0 }}>
+          {isBatch
+            ? `Mark ${count} selected tasks as won't fix?`
+            : "Mark this task as won't fix?"}
+        </p>
+        <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.5 }}>
+          This moves the task to done and stops further automatic repair for this item.
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          <button data-testid="wontfix-cancel" style={btnGhost} onClick={onCancel} disabled={loading}>
+            Cancel
+          </button>
+          <button data-testid="wontfix-confirm" style={btnGray(loading)} onClick={onConfirm} disabled={loading}>
+            Confirm Won't Fix
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
