@@ -253,9 +253,11 @@ func (s *Server) registerCompatProjectRoutes(r chi.Router) {
 	})
 	r.Route("/triage", func(r chi.Router) {
 		r.Get("/summary", s.handleCompatTriageSummary)
+		r.Post("/batch", s.handleCompatTriageBatch)
 		r.Post("/tasks/{id}/approve", s.handleCompatTriageApprove)
 		r.Post("/tasks/{id}/retry", s.handleCompatTriageRetry)
 		r.Post("/tasks/{id}/wontfix", s.handleCompatTriageWonFix)
+		r.Get("/tasks/{id}/lineage", s.handleCompatTriageLineage)
 	})
 	r.Route("/board", func(r chi.Router) {
 		r.Get("/summary", s.handleCompatBoardSummary)
@@ -1430,4 +1432,182 @@ func (s *Server) handleCompatTriageWonFix(w http.ResponseWriter, r *http.Request
 	s.persistCompatPayloadLogged(ctx, id, payload)
 
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "wontfix", "task_id": id})
+}
+
+// ── Phase 8: Batch triage + lineage timeline ──
+
+type triageBatchRequest struct {
+	TaskIDs []string `json:"task_ids"`
+	Action  string   `json:"action"` // "approve", "retry", "wontfix"
+}
+
+type triageBatchResult struct {
+	TaskID string `json:"task_id"`
+	Status string `json:"status"` // "ok" or "error"
+	Detail string `json:"detail,omitempty"`
+}
+
+// handleCompatTriageBatch performs a triage action on multiple tasks.
+// POST /api/v1/projects/{project}/triage/batch
+func (s *Server) handleCompatTriageBatch(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req triageBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "Invalid JSON body"})
+		return
+	}
+	if len(req.TaskIDs) == 0 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "task_ids is required"})
+		return
+	}
+	if len(req.TaskIDs) > 50 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"detail": "max 50 tasks per batch"})
+		return
+	}
+
+	var results []triageBatchResult
+	for _, id := range req.TaskIDs {
+		task, err := s.repo.GetTaskByID(ctx, id)
+		if err != nil || task == nil {
+			results = append(results, triageBatchResult{TaskID: id, Status: "error", Detail: "not found"})
+			continue
+		}
+
+		var toState string
+		var reason string
+		switch req.Action {
+		case "approve":
+			toState = engine.StateVerified
+			reason = "batch_triage_approve"
+		case "retry":
+			toState = engine.StateRetryWaiting
+			reason = "batch_triage_retry"
+		case "wontfix":
+			toState = engine.StateDone
+			reason = "batch_triage_wontfix"
+		default:
+			results = append(results, triageBatchResult{TaskID: id, Status: "error", Detail: "invalid action"})
+			continue
+		}
+
+		if err := s.transitionCompatTaskState(ctx, task, toState, reason, ""); err != nil {
+			results = append(results, triageBatchResult{TaskID: id, Status: "error", Detail: err.Error()})
+			continue
+		}
+
+		payload := decodeCompatPayload(task.CardJSON)
+		syncCompatPayloadState(payload, toState)
+		payload["coordination_stage"] = "batch_" + req.Action
+		if req.Action == "retry" {
+			payload["auto_repair_count"] = 0
+			payload["last_rejection_reason"] = ""
+		} else {
+			payload["dispatch_status"] = "completed"
+		}
+		s.persistCompatPayloadLogged(ctx, id, payload)
+
+		results = append(results, triageBatchResult{TaskID: id, Status: "ok"})
+	}
+
+	s.writeJSON(w, http.StatusOK, results)
+}
+
+type triageTimelineEntry struct {
+	TaskID    string `json:"task_id"`
+	Type      string `json:"type"` // "original", "review", "rework"
+	State     string `json:"state"`
+	Decision  string `json:"decision,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type triageLineageResponse struct {
+	Original *triageTimelineEntry  `json:"original"`
+	Timeline []triageTimelineEntry `json:"timeline"`
+}
+
+// handleCompatTriageLineage returns the full rework/review timeline for a task.
+// GET /api/v1/projects/{project}/triage/tasks/{id}/lineage
+func (s *Server) handleCompatTriageLineage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil || task == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"detail": "Task not found"})
+		return
+	}
+
+	allTasks, err := s.repo.ListAllTasks(ctx)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"detail": "Failed to load tasks"})
+		return
+	}
+
+	payload := decodeCompatPayload(task.CardJSON)
+	rootTaskID := readString(payload, "root_task_id")
+	if rootTaskID == "" {
+		rootTaskID = id
+	}
+
+	// Collect all tasks sharing the same root
+	var timeline []triageTimelineEntry
+	for _, t := range allTasks {
+		p := decodeCompatPayload(t.CardJSON)
+		tRoot := readString(p, "root_task_id")
+		if tRoot == "" {
+			tRoot = t.ID
+		}
+		if tRoot != rootTaskID && t.ID != rootTaskID {
+			continue
+		}
+
+		taskType := readString(p, "type")
+		entryType := "original"
+		switch taskType {
+		case "code-review", "review":
+			entryType = "review"
+		case "rework", "artifact-fix":
+			entryType = "rework"
+		case "debug-failure", "triage":
+			entryType = "triage"
+		}
+
+		timeline = append(timeline, triageTimelineEntry{
+			TaskID:    t.ID,
+			Type:      entryType,
+			State:     t.State,
+			Decision:  readString(p, "review_decision"),
+			Summary:   truncateString(readString(p, "result_summary"), 300),
+			CreatedAt: t.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt: t.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	// Sort by CreatedAt
+	slices.SortStableFunc(timeline, func(a, b triageTimelineEntry) int {
+		return strings.Compare(a.CreatedAt, b.CreatedAt)
+	})
+
+	var original *triageTimelineEntry
+	for i := range timeline {
+		if timeline[i].Type == "original" {
+			original = &timeline[i]
+			break
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, triageLineageResponse{
+		Original: original,
+		Timeline: timeline,
+	})
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

@@ -16,6 +16,8 @@ import type {
   SystemWorkersResponse,
   TaskExecution,
   TaskLineage,
+  TriageBatchResult,
+  TriageLineageResponse,
   TriageTask,
   UpdateScheduledTaskInput,
 } from '../types/scheduler';
@@ -434,5 +436,15 @@ export const schedulerApi = {
 
   triageWonFix: async (projectId: string, taskId: string): Promise<void> => {
     await client.post(`${projectBase(projectId)}/triage/tasks/${taskId}/wontfix`);
+  },
+
+  triageBatch: async (projectId: string, taskIds: string[], action: 'approve' | 'retry' | 'wontfix'): Promise<TriageBatchResult[]> => {
+    const response = await client.post(`${projectBase(projectId)}/triage/batch`, { task_ids: taskIds, action });
+    return response.data as TriageBatchResult[];
+  },
+
+  getTriageLineage: async (projectId: string, taskId: string): Promise<TriageLineageResponse> => {
+    const response = await client.get(`${projectBase(projectId)}/triage/tasks/${taskId}/lineage`);
+    return response.data as TriageLineageResponse;
   },
 };

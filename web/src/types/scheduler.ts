@@ -333,3 +333,24 @@ export interface TriageTask extends ScheduledTask {
   rework_count?: number;
   lineage?: TaskLineage;
 }
+
+export interface TriageBatchResult {
+  task_id: string;
+  status: string;
+  detail?: string;
+}
+
+export interface TriageTimelineEntry {
+  task_id: string;
+  type: 'original' | 'review' | 'rework' | 'triage';
+  state: string;
+  decision?: string;
+  summary?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TriageLineageResponse {
+  original: TriageTimelineEntry | null;
+  timeline: TriageTimelineEntry[];
+}
