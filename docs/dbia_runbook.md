@@ -149,6 +149,14 @@ python -m pytest test_dbia_planner.py test_dbia_llm_planner.py test_review_endpo
 
 # Full E2E smoke
 python dbia_e2e_smoke.py
+
+# Triage dashboard E2E (API + browser)
+python dbia_triage_e2e.py
+
+# Playwright browser tests (requires Go server running with frontend built)
+cd "E:\vibe coding\Projects\多终端 AI 编排平台\web"
+npx playwright install chromium
+npx playwright test e2e/triage-dashboard.spec.ts
 ```
 
 ## Key Files

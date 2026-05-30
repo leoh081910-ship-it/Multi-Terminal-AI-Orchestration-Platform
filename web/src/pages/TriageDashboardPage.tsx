@@ -107,7 +107,7 @@ export default function TriageDashboardPage() {
 
       {/* Batch action bar */}
       {selected.size > 0 && (
-        <div style={{
+        <div data-testid="triage-batch-bar" style={{
           ...card, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12,
           background: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.2)',
         }}>
@@ -140,7 +140,7 @@ export default function TriageDashboardPage() {
       )}
 
       {triageTasks.length === 0 ? (
-        <div style={{ ...card, textAlign: 'center', padding: '3rem', color: '#888' }}>
+        <div data-testid="triage-empty-state" style={{ ...card, textAlign: 'center', padding: '3rem', color: '#888' }}>
           <CheckCircle size={48} color="#22c55e" style={{ marginBottom: 12 }} />
           <p style={{ fontSize: '1.1rem', margin: 0 }}>没有需要人工介入的任务</p>
           <p style={{ fontSize: '0.85rem', marginTop: 8 }}>所有任务都在自动处理中</p>
@@ -150,6 +150,7 @@ export default function TriageDashboardPage() {
           {/* Select all header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '0 4px' }}>
             <input
+              data-testid="triage-select-all"
               type="checkbox"
               checked={allSelected}
               onChange={toggleAll}
@@ -203,16 +204,17 @@ function TriageCard({
   onApprove, onRetry, onWonFix, onViewDetail, onViewTimeline, actionLoading,
 }: CardProps) {
   return (
-    <div style={{ ...card, borderColor: selected ? 'rgba(59,130,246,0.4)' : undefined }}>
+    <div data-testid="triage-task-card" style={{ ...card, borderColor: selected ? 'rgba(59,130,246,0.4)' : undefined }}>
       {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <input
+          data-testid="triage-task-checkbox"
           type="checkbox"
           checked={selected}
           onChange={onToggleSelect}
           style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
         />
-        <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}
+        <div data-testid="triage-task-expand" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}
           onClick={onToggleExpand}>
           {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
           <span style={badge(task.status)}>{task.status}</span>
